@@ -1,0 +1,75 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: uniendo_db
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: adopciones_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backendUniendoHuellas/schema_mysql_workbench.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - uniendo-net
+
+  backend:
+    build:
+      context: ./backendUniendoHuellas
+      dockerfile: Dockerfile
+    container_name: uniendo_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: adopciones_db
+      DATABASE_URL: mysql+pymysql://root:root@db:3306/adopciones_db?charset=utf8mb4
+      USE_SQLITE_FALLBACK: "true"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000"
+      JWT_SECRET: super_secret_jwt_key_nubira_weather_2026_adopciones
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - animal_images:/app/uploads
+    ports:
+      - "8000:8000"
+    networks:
+      - uniendo-net
+
+  frontend:
+    build:
+      context: ./uniendoHuellas
+      dockerfile: Dockerfile
+    container_name: uniendo_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      INTERNAL_API_URL: http://backend:8000
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    networks:
+      - uniendo-net
+
+networks:
+  uniendo-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  animal_images:
