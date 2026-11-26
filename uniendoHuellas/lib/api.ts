@@ -45,6 +45,9 @@ export interface BackendAnimal {
   descripcion?: string | null;
   foto_url?: string | null;
   es_urgente: boolean;
+  vacunado?: boolean | null;
+  esterilizado?: boolean | null;
+  desparasitado?: boolean | null;
   estado_adopcion: string;
   refugio?: BackendRefugio | null;
   es_favorito?: boolean;
@@ -56,8 +59,12 @@ export interface BackendSolicitud {
   id_usuario: number;
   id_animal: number;
   mensaje?: string | null;
+  tipo_vivienda?: string | null;
+  experiencia?: string | null;
+  telefono_contacto?: string | null;
   estado_solicitud: 'pendiente' | 'aprobada' | 'rechazada' | string;
   notas_internas?: string | null;
+  respuesta_publica?: string | null;
   fecha_solicitud: string;
   usuario?: User;
   animal?: BackendAnimal;
@@ -74,6 +81,9 @@ export interface AnimalCreateData {
   descripcion?: string;
   foto_url?: string;
   es_urgente?: boolean;
+  vacunado?: boolean | null;
+  esterilizado?: boolean | null;
+  desparasitado?: boolean | null;
   estado_adopcion?: string;
 }
 
@@ -350,14 +360,14 @@ export const api = {
       return request<BackendSolicitud[]>('/api/solicitudes/relacion/mis-solicitudes');
     },
 
-    async create(data: { id_animal: number; mensaje?: string }): Promise<BackendSolicitud> {
+    async create(data: { id_animal: number; mensaje: string; tipo_vivienda: string; experiencia: string; telefono_contacto: string }): Promise<BackendSolicitud> {
       return request<BackendSolicitud>('/api/solicitudes', {
         method: 'POST',
         body: JSON.stringify(data),
       });
     },
 
-    async updateStatus(id_solicitud: number | string, data: { estado_solicitud: string; notas_internas?: string }): Promise<BackendSolicitud> {
+    async updateStatus(id_solicitud: number | string, data: { estado_solicitud: string; notas_internas?: string; respuesta_publica?: string }): Promise<BackendSolicitud> {
       return request<BackendSolicitud>(`/api/solicitudes/${id_solicitud}/estado`, {
         method: 'PUT',
         body: JSON.stringify(data),

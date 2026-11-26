@@ -1,44 +1,63 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Pet } from '@/data/pets';
 import { useAuth } from '@/context/AuthContext';
-import { api } from '@/lib/api';
+import { api, errorMessage } from '@/lib/api';
 
 interface PetCardProps {
+  returnTo?: string;
   pet: Pet;
   isUrgentCard?: boolean;
   initialFavorite?: boolean;
+  favoriteAction?: 'toggle' | 'remove';
   onFavoriteChange?: (favorite: boolean) => void;
 }
 
-export default function PetCard({ pet, isUrgentCard = false, initialFavorite = false, onFavoriteChange }: PetCardProps) {
+export default function PetCard({ pet, isUrgentCard = false, initialFavorite = false, favoriteAction = 'toggle', onFavoriteChange, returnTo }: PetCardProps) {
+  const detailHref = `/mascotas/${pet.id}${returnTo ? `?from=${encodeURIComponent(returnTo)}` : ''}`;
   const { isAuthenticated, user } = useAuth();
+  const router = useRouter();
+  const [error, setError] = useState('');
   const [storedFavorite, setFavorite] = useState(initialFavorite);
   const favorite = isAuthenticated && storedFavorite;
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [loadedFor, setLoadedFor] = useState<number | null>(null);
   useEffect(() => {
     let active = true;
-    if (!isAuthenticated) return;
-    api.favoritos.check(Number(pet.id)).then((data) => { if (active) setFavorite(data.es_favorito); }).catch(() => {});
+    // The profile already fetched the authoritative favorite list.
+    if (!isAuthenticated || user?.id_rol !== 3 || favoriteAction === 'remove') return;
+    api.favoritos.check(Number(pet.id)).then((data) => {
+      if (active) { setFavorite(data.es_favorito); setLoadedFor(user.id_usuario); }
+    }).catch((error) => {
+      if (active) { setError(errorMessage(error)); setLoadedFor(user.id_usuario); }
+    });
     return () => { active = false; };
-  }, [isAuthenticated, user?.id_usuario, pet.id]);
+  }, [isAuthenticated, user?.id_usuario, user?.id_rol, pet.id, favoriteAction]);
 
   const toggleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (saving) return;
+    if (savingRef.current) return;
 
     const animalIdNum = parseInt(pet.id, 10);
     if (!isAuthenticated) {
-      alert('Inicia sesión para guardar favoritos.');
+      router.push(`/login?next=${encodeURIComponent(detailHref)}`);
+      return;
+    }
+    if (!Number.isInteger(animalIdNum) || animalIdNum <= 0) {
+      setError('No pudimos identificar esta mascota. Recarga la página e inténtalo de nuevo.');
       return;
     }
 
-    const nextState = !favorite;
+    const nextState = favoriteAction === 'remove' ? false : !favorite;
+    savingRef.current = true;
     setFavorite(nextState);
     setSaving(true);
+    setError('');
 
     try {
       if (!isNaN(animalIdNum)) {
@@ -50,9 +69,10 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
       }
       onFavoriteChange?.(nextState);
     } catch (err) {
-      console.warn('Error al alternar favorito:', err);
+      setError(errorMessage(err));
       setFavorite(!nextState);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -76,11 +96,12 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
             {pet.location}
           </span>
           <button
-            disabled={saving}
+            disabled={saving || (!!user && (user.id_rol !== 3 || loadedFor !== user.id_usuario))}
             aria-pressed={favorite}
             onClick={toggleFavorite}
             className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-primary shadow-sm hover:scale-110 transition-transform"
             title={favorite ? 'Quitar favorito' : 'Guardar favorito'}
+            aria-label={`${favorite ? 'Quitar favorito' : 'Guardar favorito'}: ${pet.name}`}
           >
             <span
               className="material-symbols-outlined text-[18px]"
@@ -92,6 +113,7 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
         </div>
 
         <div className="px-space-xs">
+          {error && <p role="alert" className="text-error text-xs">{error}</p>}
           <div className="flex items-center justify-between">
             <h3 className="font-headline-sm text-[18px] text-on-surface font-bold">{pet.name}</h3>
             <span className="text-xs text-on-surface-variant font-medium">
@@ -108,7 +130,7 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
             {pet.shelter}
           </span>
           <Link
-            href={`/mascotas/${pet.id}`}
+            href={detailHref}
             className="inline-flex items-center text-xs font-bold text-primary hover:text-on-primary-container bg-primary-fixed/60 hover:bg-primary-fixed px-2.5 py-1 rounded-md transition-colors"
           >
             Postularme
@@ -126,9 +148,9 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
           alt={pet.name}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
-        <div className="absolute top-3 right-3">
+        {favoriteAction === 'toggle' && <div className="absolute top-3 right-3">
           <button
-            disabled={saving}
+            disabled={saving || (!!user && (user.id_rol !== 3 || loadedFor !== user.id_usuario))}
             aria-pressed={favorite}
             type="button"
             onClick={toggleFavorite}
@@ -136,6 +158,7 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
               favorite ? 'text-primary' : 'text-on-surface-variant'
             }`}
             title={favorite ? 'Quitar favorito' : 'Guardar favorito'}
+            aria-label={`${favorite ? 'Quitar favorito' : 'Guardar favorito'}: ${pet.name}`}
           >
             <span
               className="material-symbols-outlined text-[20px]"
@@ -144,7 +167,7 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
               favorite
             </span>
           </button>
-        </div>
+        </div>}
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
           {pet.tags.slice(0, 2).map((tag) => (
             <span
@@ -158,8 +181,9 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
       </div>
 
       <div className="p-space-lg flex flex-col flex-1 justify-between gap-space-md">
+        {error && <p role="alert" className="text-error text-xs">{error}</p>}
         <div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
               {pet.name}
             </h3>
@@ -172,22 +196,30 @@ export default function PetCard({ pet, isUrgentCard = false, initialFavorite = f
           </p>
         </div>
 
-        <div className="pt-space-sm flex items-center justify-between border-t border-surface-container-high/60 bg-surface-container-low/70 p-space-sm rounded-xl">
-          <div className="flex items-center gap-space-xs overflow-hidden pr-2">
+        <div className="pt-space-sm flex flex-wrap items-center justify-between gap-3 border-t border-surface-container-high/60 bg-surface-container-low/70 p-space-sm rounded-xl">
+          <div className="flex items-center gap-space-xs min-w-0 flex-1 basis-36">
             <span className="material-symbols-outlined text-[18px] text-secondary shrink-0">
               home_pin
             </span>
-            <span className="font-body-sm text-body-sm text-on-surface truncate">
+            <span className="font-body-sm text-body-sm text-on-surface break-words min-w-0">
               {pet.shelter}
             </span>
           </div>
           <Link
-            href={`/mascotas/${pet.id}`}
+            href={detailHref}
             className="font-label-sm text-label-sm text-primary font-bold hover:underline shrink-0"
           >
             Conocer más →
           </Link>
         </div>
+        {favoriteAction === 'remove' && <div className="border-t border-surface-container-high pt-3">
+          <button type="button" disabled={saving} onClick={toggleFavorite}
+            aria-label={`Quitar de favoritos: ${pet.name}`}
+            className="w-full inline-flex justify-center items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-error bg-error-container/20 hover:bg-error-container/40 disabled:opacity-60">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{saving ? 'progress_activity' : 'delete'}</span>
+            {saving ? 'Quitando…' : 'Quitar de favoritos'}
+          </button>
+        </div>}
       </div>
     </div>
   );

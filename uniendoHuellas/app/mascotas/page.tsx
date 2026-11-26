@@ -9,23 +9,37 @@ import { Pet } from '@/data/pets';
 import { api, errorMessage } from '@/lib/api';
 import { backendAnimalsToPets } from '@/lib/adapters';
 import AdminRouteBoundary from '@/components/AdminRouteBoundary';
+import { normalizeSearch } from '@/lib/presentation';
 
 function MascotasContent() {
   const searchParams = useSearchParams();
 
-  const initialSpecies = searchParams.get('species') || 'all';
-  const initialLocation = searchParams.get('location') || 'all';
-  const initialAge = searchParams.get('age') || 'all';
-
-  const [species, setSpecies] = useState<string>(initialSpecies);
-  const [location, setLocation] = useState<string>(initialLocation);
-  const [age, setAge] = useState<string>(initialAge);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [activeChip, setActiveChip] = useState<string>('todos');
+  const species = searchParams.get('species') || 'all';
+  const location = searchParams.get('location') || 'all';
+  const age = searchParams.get('age') || 'all';
+  const searchTerm = searchParams.get('q') || '';
+  const activeChip = searchParams.get('chip') || 'todos';
+  const returnTo = `/mascotas${searchParams.size ? `?${searchParams}` : ''}`;
+  const updateFilters = (values: Record<string, string>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(values)) {
+      if (['', 'all', 'todos'].includes(value)) params.delete(key);
+      else params.set(key, value);
+    }
+    window.history.replaceState(null, '', `/mascotas${params.size ? `?${params}` : ''}${window.location.hash}`);
+  };
+  const setSpecies = (value: string) => updateFilters({ species: value });
+  const setLocation = (value: string) => updateFilters({ location: value });
+  const setAge = (value: string) => updateFilters({ age: value });
+  const setSearchTerm = (value: string) => updateFilters({ q: value });
+  const setActiveChip = (value: string) => updateFilters({ chip: value });
 
   const [pets, setPets] = useState<Pet[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
+  const locations = useMemo(() => Array.from(new Map(pets.map((pet) =>
+    [pet.locationCity, pet.location])).entries()).sort((a, b) => a[1].localeCompare(b[1], 'es')), [pets]);
 
   // Load real pets from API
   useEffect(() => {
@@ -40,12 +54,7 @@ function MascotasContent() {
       .finally(() => {
         setIsLoading(false);
       });
-  }, []);
-
-  // Filter urgent pets
-  const urgentPets = useMemo(() => {
-    return pets.filter((p) => p.urgent);
-  }, [pets]);
+  }, [reload]);
 
   // Filter catalog pets based on selections
   const filteredPets = useMemo(() => {
@@ -68,12 +77,8 @@ function MascotasContent() {
 
       // Search term
       if (searchTerm.trim() !== '') {
-        const query = searchTerm.toLowerCase();
-        const matchesName = pet.name.toLowerCase().includes(query);
-        const matchesBreed = pet.breed.toLowerCase().includes(query);
-        const matchesTags = pet.tags.some((t) => t.toLowerCase().includes(query));
-        const matchesShelter = pet.shelter.toLowerCase().includes(query);
-        if (!matchesName && !matchesBreed && !matchesTags && !matchesShelter) {
+        const query = normalizeSearch(searchTerm);
+        if (!normalizeSearch(`${pet.name} ${pet.breed} ${pet.tags.join(' ')} ${pet.shelter} ${pet.location} ${pet.description}`).includes(query)) {
           return false;
         }
       }
@@ -81,19 +86,17 @@ function MascotasContent() {
       return true;
     });
   }, [pets, species, location, age, searchTerm, activeChip]);
+  const urgentPets = useMemo(() => filteredPets.filter((pet) => pet.urgent), [filteredPets]);
 
   const resetFilters = () => {
-    setSpecies('all');
-    setLocation('all');
-    setAge('all');
-    setSearchTerm('');
-    setActiveChip('todos');
+    updateFilters({ species: 'all', location: 'all', age: 'all', q: '', chip: 'todos' });
   };
 
   return (
     <main className="w-full pt-20 bg-background min-h-[calc(100vh-280px)]">
       {isLoading && <p role="status" className="max-w-[1240px] mx-auto px-gutter py-3">Cargando mascotas…</p>}
-      {loadError && <p role="alert" className="max-w-[1240px] mx-auto px-gutter py-3 text-error">{loadError}</p>}
+      {loadError && <p role="alert" className="max-w-[1240px] mx-auto px-gutter py-3 text-error">{loadError}{' '}
+        <button type="button" className="underline" onClick={() => { setLoadError(''); setIsLoading(true); setReload((value) => value + 1); }}>Reintentar</button></p>}
       <div className="flex flex-col w-full">
         {/* Compact Hero with Integrated Search Focus */}
         <section className="relative w-full overflow-hidden bg-surface-container-low pt-space-lg pb-space-xl">
@@ -129,17 +132,17 @@ function MascotasContent() {
                     <div>
                       <p className="font-label-md text-label-md font-bold text-white flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Historias reales de adopción
+                        Un hogar cambia una vida
                       </p>
                       <p className="font-body-sm text-body-sm text-white/90">
-                        Canela ya duerme segura en su nuevo hogar.
+                         Conoce a quienes esperan una familia.
                       </p>
                     </div>
                     <a
                       className="px-space-sm py-1 bg-surface-container-lowest/90 backdrop-blur-md rounded-lg text-primary font-label-sm text-label-sm font-bold hover:bg-surface-container-lowest transition-colors"
-                      href="#casos-urgentes"
+                      href={urgentPets.length ? '#casos-urgentes' : '#galeria-adopciones'}
                     >
-                      Ver urgentes
+                      {urgentPets.length ? 'Ver urgentes' : 'Ver catálogo'}
                     </a>
                   </div>
                 </div>
@@ -179,8 +182,8 @@ function MascotasContent() {
                       className="w-full appearance-none bg-surface-container-low px-space-md py-space-sm rounded-lg font-body-md text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/40 transition-all pr-8 border border-transparent focus:border-primary-container"
                     >
                       <option value="all">Todas las especies</option>
-                      <option value="perros">Perros (4)</option>
-                      <option value="gatos">Gatos (3)</option>
+                      <option value="perros">Perros ({pets.filter((pet) => pet.species === 'perros').length})</option>
+                      <option value="gatos">Gatos ({pets.filter((pet) => pet.species === 'gatos').length})</option>
                       <option value="otros">Otros compañeros</option>
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
@@ -203,10 +206,7 @@ function MascotasContent() {
                       className="w-full appearance-none bg-surface-container-low px-space-md py-space-sm rounded-lg font-body-md text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/40 transition-all pr-8 border border-transparent focus:border-primary-container"
                     >
                       <option value="all">Todas las regiones</option>
-                      <option value="cdmx">Ciudad de México y Área Metro</option>
-                      <option value="gdl">Guadalajara, Jalisco</option>
-                      <option value="mty">Monterrey, Nuevo León</option>
-                      <option value="pue">Puebla y alrededores</option>
+                      {locations.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                       expand_more
@@ -228,10 +228,10 @@ function MascotasContent() {
                       className="w-full appearance-none bg-surface-container-low px-space-md py-space-sm rounded-lg font-body-md text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/40 transition-all pr-8 border border-transparent focus:border-primary-container"
                     >
                       <option value="all">Cualquier edad</option>
-                      <option value="cachorro">Cachorro / Bebé (0-1 año)</option>
-                      <option value="joven">Joven (1-3 años)</option>
+                      <option value="cachorro">Cachorro / Bebé (menos de 1 año)</option>
+                      <option value="joven">Joven (1-2 años)</option>
                       <option value="adulto">Adulto (3-7 años)</option>
-                      <option value="senior">Senior (7+ años)</option>
+                      <option value="senior">Senior (8+ años)</option>
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                       expand_more
@@ -255,7 +255,8 @@ function MascotasContent() {
                 ].map((chip) => (
                   <button
                     key={chip.id}
-                    type="button"
+                     type="button"
+                     aria-pressed={activeChip === chip.id}
                     onClick={() => setActiveChip(chip.id)}
                     className={`px-space-md py-1 rounded-full font-label-sm text-label-sm transition-all ${
                       activeChip === chip.id
@@ -283,7 +284,7 @@ function MascotasContent() {
         </section>
 
         {/* Sección Destacada: Casos Urgentes & En Espera Especial */}
-        <section className="w-full bg-surface-container-low/70 py-space-xl border-y border-surface-variant/40" id="casos-urgentes">
+        {urgentPets.length > 0 && <section className="w-full bg-surface-container-low/70 py-space-xl border-y border-surface-variant/40" id="casos-urgentes">
           <div className="max-w-[1240px] mx-auto px-gutter">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm mb-space-lg">
               <div className="flex items-center gap-space-sm">
@@ -306,11 +307,11 @@ function MascotasContent() {
             {/* Grid Horizontal de Urgentes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
               {urgentPets.map((pet) => (
-                <PetCard key={pet.id} pet={pet} isUrgentCard={true} />
+                <PetCard key={pet.id} pet={pet} isUrgentCard={true} returnTo={returnTo} />
               ))}
             </div>
           </div>
-        </section>
+        </section>}
 
         {/* Catálogo Principal de Mascotas en Adopción */}
         <section className="max-w-[1240px] mx-auto px-gutter py-space-2xl w-full" id="galeria-adopciones">
@@ -338,10 +339,10 @@ function MascotasContent() {
           {filteredPets.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-lg">
               {filteredPets.map((pet) => (
-                <PetCard key={pet.id} pet={pet} />
+                <PetCard key={pet.id} pet={pet} returnTo={returnTo} />
               ))}
             </div>
-          ) : (
+          ) : !isLoading && !loadError ? (
             <div className="bg-surface-container-lowest rounded-2xl p-space-2xl text-center border border-dashed border-outline-variant max-w-lg mx-auto my-space-xl">
               <span className="material-symbols-outlined text-[48px] text-on-surface-variant mb-space-sm">
                 pets
@@ -360,7 +361,7 @@ function MascotasContent() {
                 Ver todas las mascotas
               </button>
             </div>
-          )}
+          ) : null}
         </section>
       </div>
     </main>

@@ -32,6 +32,7 @@ export default function VolunteerPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [success, setSuccess] = useState('');
   const [reload, setReload] = useState(0);
 
@@ -39,13 +40,14 @@ export default function VolunteerPanel() {
     let active = true;
     Promise.all([api.voluntariado.mine(), api.dashboard.getRefugiosDirectorio()])
       .then(([items, shelters]) => { if (active) { setApplications(items); setShelters(shelters); } })
-      .catch((error) => { if (active) setError(errorMessage(error)); })
+      .catch((error) => { if (active) setLoadError(errorMessage(error)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [reload]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     setError('');
     setSuccess('');
     if (!shelter || availability.trim().length < 5) {
@@ -72,7 +74,7 @@ export default function VolunteerPanel() {
         <h2 className="font-headline-md text-headline-md font-bold">Mi voluntariado</h2>
         <p className="text-on-surface-variant">Ofrece tu tiempo o un hogar temporal y sigue la revisión de tus solicitudes.</p>
       </div>
-      {loading ? <p role="status">Cargando tu voluntariado…</p> : (
+      {loading ? <p role="status">Cargando tu voluntariado…</p> : loadError ? null : (
         <form onSubmit={submit} className="p-space-lg rounded-xl border border-surface-container-high bg-surface-container-lowest space-y-4">
           <h3 className="font-bold text-lg">Quiero colaborar</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -106,15 +108,16 @@ export default function VolunteerPanel() {
           </button>
         </form>
       )}
-      {error && <div role="alert" className="text-error bg-error-container/30 p-3 rounded-lg">
-        <p>{error}</p><button type="button" onClick={() => {
-          setLoading(true); setError(''); setReload((value) => value + 1);
+      {loadError && <div role="alert" className="text-error bg-error-container/30 p-3 rounded-lg">
+        <p>No pudimos cargar tu voluntariado. {loadError}</p><button type="button" onClick={() => {
+          setLoading(true); setLoadError(''); setReload((value) => value + 1);
         }} className="underline text-sm mt-2">Volver a cargar</button>
       </div>}
+      {error && <p role="alert" className="text-error bg-error-container/30 p-3 rounded-lg">{error}</p>}
       {success && <p role="status" className="text-secondary bg-secondary-container/40 p-3 rounded-lg">{success}</p>}
       <h3 className="font-bold text-lg">Mis solicitudes de colaboración</h3>
-      {!loading && !applications.length && <p className="text-on-surface-variant">Aún no has enviado solicitudes de voluntariado.</p>}
-      {applications.map((item) => <ApplicationCard key={item.id_solicitud} application={item} />)}
+      {!loading && !loadError && !applications.length && <p className="text-on-surface-variant">Aún no has enviado solicitudes de voluntariado.</p>}
+      {!loadError && applications.map((item) => <ApplicationCard key={item.id_solicitud} application={item} />)}
     </section>
   );
 }

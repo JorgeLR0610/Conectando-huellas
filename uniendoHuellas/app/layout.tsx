@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 
@@ -16,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className="h-full">
+    <html lang="es" className="h-full" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -25,7 +26,8 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#fbf8ff] text-[#181a2e] antialiased">
+      <body className="min-h-full flex flex-col bg-background text-on-surface antialiased">
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

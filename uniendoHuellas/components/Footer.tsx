@@ -64,12 +64,12 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link className="hover:text-primary transition-colors" href={isAuthenticated ? '/perfil' : '/registro'}>
+                <Link className="hover:text-primary transition-colors" href={isAuthenticated ? '/perfil?tab=voluntariado' : '/registro'}>
                   Voluntariado activo
                 </Link>
               </li>
               <li>
-                <Link className="hover:text-primary transition-colors" href={isAuthenticated ? '/perfil' : '/registro'}>
+                <Link className="hover:text-primary transition-colors" href={isAuthenticated ? '/perfil?tab=voluntariado' : '/registro'}>
                   Hogares temporales
                 </Link>
               </li>
@@ -81,8 +81,9 @@ export default function Footer() {
               Para Refugios
             </h4>
             <p className="font-body-sm text-body-sm text-on-surface-variant mb-space-sm leading-relaxed">
-              ¿Gestionas un centro de rescate o albergue? Forma parte de nuestra red verificada.
+               Consulta los refugios participantes y confirma directamente sus requisitos de adopción y colaboración.
             </p>
+            <Link href="/refugios" className="text-secondary font-semibold hover:underline">Directorio de refugios</Link>
             {!isLoading && user?.id_rol === 1 && <Link
               className="inline-flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:text-on-surface font-bold transition-colors"
               href="/admin"
@@ -94,15 +95,15 @@ export default function Footer() {
         </div>
 
         <div className="pt-space-lg border-t border-outline-variant/30 flex flex-col sm:flex-row items-center justify-between gap-space-md text-on-surface-variant font-body-sm text-body-sm">
-          <p>© 2024 Conectando Huellas. Todos los derechos reservados.</p>
+          <p>Conectando Huellas · Proyecto de demostración académica.</p>
           <div className="flex gap-space-md font-label-sm text-label-sm">
-            <Link className="hover:text-primary transition-colors" href="#">
+            <Link className="hover:text-primary transition-colors" href="/informacion#privacidad">
               Privacidad
             </Link>
-            <Link className="hover:text-primary transition-colors" href="#">
+            <Link className="hover:text-primary transition-colors" href="/informacion#condiciones">
               Términos de Servicio
             </Link>
-            <Link className="hover:text-primary transition-colors" href="#">
+            <Link className="hover:text-primary transition-colors" href="/refugios">
               Contacto Ético
             </Link>
           </div>

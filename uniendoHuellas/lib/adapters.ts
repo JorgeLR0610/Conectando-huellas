@@ -1,14 +1,15 @@
 import { Pet } from '@/data/pets';
-import { BackendAnimal, BackendSolicitud } from './api';
+import { BackendAnimal } from './api';
 
 export function determineAgeCategory(edadStr: string): 'cachorro' | 'joven' | 'adulto' | 'senior' {
   const lower = (edadStr || '').toLowerCase();
   if (lower.includes('mes') || lower.includes('cachorro') || lower.includes('bebé') || lower.includes('semana')) {
     return 'cachorro';
   }
-  const matchNum = lower.match(/\d+/);
+  const matchNum = lower.match(/\d+(?:[.,]\d+)?/);
   if (matchNum) {
-    const num = parseInt(matchNum[0], 10);
+    const num = Number(matchNum[0].replace(',', '.'));
+    if (num < 1) return 'cachorro';
     if (num <= 2) return 'joven';
     if (num <= 7) return 'adulto';
     return 'senior';
@@ -16,13 +17,13 @@ export function determineAgeCategory(edadStr: string): 'cachorro' | 'joven' | 'a
   return 'adulto';
 }
 
-export function determineCityKey(ciudad?: string): 'cdmx' | 'gdl' | 'mty' | 'pue' | 'all' {
+export function determineCityKey(ciudad?: string): string {
   const c = (ciudad || '').toLowerCase();
   if (c.includes('méxico') || c.includes('cdmx') || c.includes('df')) return 'cdmx';
   if (c.includes('guadalajara') || c.includes('jalisco') || c.includes('gdl')) return 'gdl';
   if (c.includes('monterrey') || c.includes('nuevo león') || c.includes('mty')) return 'mty';
   if (c.includes('puebla') || c.includes('pue')) return 'pue';
-  return 'cdmx';
+  return c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, '-') || 'sin-ubicacion';
 }
 
 export function determineSpeciesKey(especie: string): 'perros' | 'gatos' | 'otros' {
@@ -56,34 +57,35 @@ export function backendAnimalToPet(animal: BackendAnimal): Pet {
     ageCategory,
     gender: (animal.sexo as 'Macho' | 'Hembra') || 'Macho',
     size: animal.tamano || 'Mediano',
-    energy: 'Moderada',
+    energy: 'Sin confirmar',
+    adoptionStatus: animal.estado_adopcion,
     location: animal.refugio
       ? `${animal.refugio.ciudad}, ${animal.refugio.estado}`
       : 'México',
     locationCity: cityKey,
     shelter: animal.refugio?.nombre_organizacion || 'Refugio Uniendo Huellas',
     shelterContact: {
-      email: 'contacto@uniendohuellas.org',
-      phone: animal.refugio?.telefono || '+52 81 1234 5678',
-      address: animal.refugio?.direccion || 'Av. Siempre Viva 742',
-      hours: 'Lun a Sáb: 10:00 - 18:00 hrs',
+      email: '',
+      phone: animal.refugio?.telefono || '',
+      address: animal.refugio?.direccion || 'Dirección sin confirmar',
+      hours: 'Consulta horarios directamente con el refugio.',
     },
     tags: [
       animal.tamano || 'Mediano',
       animal.sexo || 'Macho',
-      animal.estado_adopcion === 'disponible' ? 'Disponible' : 'En proceso',
-      'Esterilizado/a',
-      'Vacunado/a',
+      animal.estado_adopcion === 'disponible' ? 'Disponible' : animal.estado_adopcion === 'adoptado' ? 'Adoptado' : 'En proceso',
+      ...(animal.esterilizado === true ? ['Esterilizado/a'] : []),
+      ...(animal.vacunado === true ? ['Vacunado/a'] : []),
     ],
     urgent: isUrgent,
     urgencyTag: isUrgent ? 'Adopción Prioritaria' : undefined,
     description: animal.descripcion || `${animal.nombre} busca un hogar responsable y lleno de cariño.`,
     story:
       animal.descripcion ||
-      `${animal.nombre} fue rescatado y rehabilitado por nuestro equipo. Se encuentra listo para integrarse a una familia responsable que le brinde todo el amor y los cuidados que merece.`,
-    vaccinated: true,
-    sterilized: true,
-    dewormed: true,
+       `Consulta al refugio para conocer la historia y los cuidados de ${animal.nombre}.`,
+    vaccinated: animal.vacunado ?? null,
+    sterilized: animal.esterilizado ?? null,
+    dewormed: animal.desparasitado ?? null,
     images,
   };
 }

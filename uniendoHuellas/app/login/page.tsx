@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import SessionStatus from '@/components/SessionStatus';
@@ -12,11 +12,16 @@ import { useGuestOnly } from '@/lib/useGuestOnly';
 
 export default function LoginPage() {
   const { sessionVersion } = useAuth();
-  return <LoginForm key={sessionVersion} />;
+  return <Suspense fallback={<SessionStatus />}><LoginForm key={sessionVersion} /></Suspense>;
 }
 
 function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requested = searchParams.get('next') || '';
+  // Only return to known local catalog/detail/profile routes, never arbitrary URLs.
+  const next = /^\/mascotas(?:\/\d+)?(?:\?[^#]*)?$/.test(requested) ||
+    /^\/perfil(?:\?tab=(favoritos|solicitudes|voluntariado))?$/.test(requested) ? requested : '/perfil';
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -39,7 +44,7 @@ function LoginForm() {
     submittedHere.current = true;
     try {
       const user = await login(email.trim(), password);
-      router.replace(user.id_rol === 1 ? '/admin' : '/perfil');
+      router.replace(user.id_rol === 1 ? '/admin' : next);
     } catch (error) {
       submittedHere.current = false;
       setError(errorMessage(error));

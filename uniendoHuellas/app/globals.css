@@ -67,6 +67,85 @@
   --on-surface: #181a2e;
   --gutter: 1.5rem;
   --gutter-mobile: 1rem;
+  color-scheme: light;
+}
+
+/* Every semantic surface/text token switches together, including dialogs. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-primary: #ffb59d;
+  --color-on-primary: #361005;
+  --color-primary-container: #f0a58a;
+  --color-on-primary-container: #361005;
+  --color-primary-fixed: #52271c;
+  --color-primary-fixed-dim: #663224;
+  --color-on-primary-fixed: #ffdbce;
+  --color-on-primary-fixed-variant: #ffc5ae;
+  --color-secondary: #a6dbc0;
+  --color-on-secondary: #073825;
+  --color-secondary-container: #254d3b;
+  --color-on-secondary-container: #c5efda;
+  --color-secondary-fixed: #234d39;
+  --color-secondary-fixed-dim: #34654d;
+  --color-on-secondary-fixed: #d1f7e3;
+  --color-on-secondary-fixed-variant: #b9e8ce;
+  --color-tertiary: #ccc6be;
+  --color-on-tertiary: #292623;
+  --color-tertiary-container: #514b46;
+  --color-on-tertiary-container: #eee6dd;
+  --color-tertiary-fixed: #49433d;
+  --color-tertiary-fixed-dim: #5b544c;
+  --color-on-tertiary-fixed: #f1e9df;
+  --color-on-tertiary-fixed-variant: #d7ccc0;
+  --color-background: #14151e;
+  --color-on-background: #e9e5f2;
+  --color-surface: #191a25;
+  --color-surface-dim: #12131b;
+  --color-surface-bright: #333441;
+  --color-surface-container-lowest: #1b1c28;
+  --color-surface-container-low: #20212f;
+  --color-surface-container: #282937;
+  --color-surface-container-high: #30313f;
+  --color-surface-container-highest: #393a49;
+  --color-surface-variant: #424350;
+  --color-on-surface: #e9e5f2;
+  --color-on-surface-variant: #ccc2be;
+  --color-outline: #ab9d97;
+  --color-outline-variant: #60524d;
+  --color-error: #ffb4ab;
+  --color-on-error: #580c08;
+  --color-error-container: #612622;
+  --color-on-error-container: #ffdad6;
+  --primary: var(--color-primary);
+  --primary-container: var(--color-primary-container);
+  --secondary: var(--color-secondary);
+  --secondary-container: var(--color-secondary-container);
+  --background: var(--color-background);
+  --on-surface: var(--color-on-surface);
+}
+
+/* Legacy solid-color buttons: retain contrast without altering photo overlays. */
+:root[data-theme="dark"] .bg-primary.text-white {
+  color: var(--color-on-primary);
+}
+:root[data-theme="dark"] .bg-secondary.text-white {
+  color: var(--color-on-secondary);
+}
+:root[data-theme="dark"] .bg-white\/90 {
+  background-color: color-mix(in srgb, var(--color-surface-container-lowest) 94%, transparent);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 * {
@@ -75,8 +154,8 @@
 
 body {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  background-color: #fbf8ff;
-  color: #181a2e;
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;

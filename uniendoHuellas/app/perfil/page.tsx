@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import PetCard from '@/components/PetCard';
@@ -14,21 +14,31 @@ import { isRegularUser, roleLabel } from '@/lib/auth';
 import SessionStatus from '@/components/SessionStatus';
 import VolunteerPanel from '@/components/VolunteerPanel';
 import StaffProfile from '@/components/StaffProfile';
+import { adoptionDetails } from '@/lib/presentation';
 
 export default function ProfilePage() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <SessionStatus />;
   if (user && !isRegularUser(user)) return <StaffProfile key={user.id_usuario} />;
-  return <ProfileContent key={user?.id_usuario ?? 'guest'} />;
+  return <Suspense fallback={<SessionStatus />}><ProfileContent key={user?.id_usuario ?? 'guest'} /></Suspense>;
 }
 
 function ProfileContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'favoritos' | 'solicitudes' | 'voluntariado'>('favoritos');
-  const [loadError, setLoadError] = useState('');
-  const [reload, setReload] = useState(0);
+  const tab = searchParams.get('tab');
+  const activeTab = tab === 'solicitudes' || tab === 'voluntariado' ? tab : 'favoritos';
+  const setActiveTab = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', value);
+    window.history.replaceState(null, '', `/perfil?${params}`);
+  };
+  const [favoriteLoadError, setFavoriteLoadError] = useState('');
+  const [applicationLoadError, setApplicationLoadError] = useState('');
+  const [favoriteReload, setFavoriteReload] = useState(0);
+  const [applicationReload, setApplicationReload] = useState(0);
   const [savedFavorites, setSavedFavorites] = useState<Pet[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState<boolean>(true);
   const [mySolicitudes, setMySolicitudes] = useState<BackendSolicitud[]>([]);
@@ -52,35 +62,29 @@ function ProfileContent() {
           }
         })
         .catch((err) => {
-          if (active) setLoadError(errorMessage(err));
+          if (active) setFavoriteLoadError(errorMessage(err));
         })
         .finally(() => { if (active) setLoadingFavorites(false); });
 
-      // Load user applications
+    }
+    return () => { active = false; };
+  }, [isAuthenticated, user?.id_usuario, favoriteReload]);
+
+  useEffect(() => {
+    let active = true;
+    if (isAuthenticated) {
       api.solicitudes
         .getMySolicitudes()
         .then((items) => {
           if (active && items) setMySolicitudes(items);
         })
         .catch((err) => {
-          if (active) setLoadError(errorMessage(err));
+          if (active) setApplicationLoadError(errorMessage(err));
         })
         .finally(() => { if (active) setLoadingSolicitudes(false); });
     }
     return () => { active = false; };
-  }, [isAuthenticated, user?.id_usuario, reload]);
-
-  const removeFavorite = async (id: string) => {
-    const animalIdNum = parseInt(id, 10);
-    if (!isNaN(animalIdNum)) {
-      try {
-        await api.favoritos.removeByAnimal(animalIdNum);
-        setSavedFavorites((prev) => prev.filter((p) => p.id !== id));
-      } catch (err) {
-        setLoadError(errorMessage(err));
-      }
-    }
-  };
+  }, [isAuthenticated, user?.id_usuario, applicationReload]);
 
   const handleLogout = () => {
     logout();
@@ -106,7 +110,7 @@ function ProfileContent() {
             </p>
             <div className="flex flex-col gap-3">
               <Link
-                href="/login"
+                href={`/login?next=${encodeURIComponent(`/perfil?tab=${activeTab}`)}`}
                 className="w-full py-3 rounded-xl bg-primary text-white font-bold text-sm shadow-md hover:bg-primary-container transition-all"
               >
                 Iniciar sesión
@@ -205,10 +209,10 @@ function ProfileContent() {
                   </div>
                   <div className="pr-space-xs">
                     <p className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-                      Trámites activos
+                      Solicitudes registradas
                     </p>
                     <p className="font-headline-sm text-headline-sm text-primary font-bold">
-                      {mySolicitudes.length} Solicitud{mySolicitudes.length === 1 ? '' : 'es'}
+                      {loadingSolicitudes ? 'Cargando…' : applicationLoadError ? 'No disponible' : `${mySolicitudes.length} Solicitud${mySolicitudes.length === 1 ? '' : 'es'}`}
                     </p>
                   </div>
                 </div>
@@ -227,48 +231,44 @@ function ProfileContent() {
           </div>
 
           {/* Navigation Tabs Bar */}
-          <div className="flex items-center gap-space-xs overflow-x-auto pb-space-sm mb-space-lg" id="profileTabs">
+          <nav aria-label="Secciones de mi perfil" className="flex flex-wrap items-center gap-2 pb-space-sm mb-space-lg" id="profileTabs">
             {isRegularUser(user) && (
-              <button type="button" onClick={() => setActiveTab('voluntariado')}
-                className={`px-space-md py-space-sm rounded-lg font-semibold whitespace-nowrap ${activeTab === 'voluntariado' ? 'bg-primary text-white' : 'bg-surface-container text-on-surface-variant'}`}>
+              <button type="button" onClick={() => setActiveTab('voluntariado')} aria-pressed={activeTab === 'voluntariado'}
+                className={`px-space-md py-space-sm rounded-lg font-semibold whitespace-nowrap ${activeTab === 'voluntariado' ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>
                 Mi voluntariado
               </button>
             )}
             <button
               type="button"
               onClick={() => setActiveTab('favoritos')}
+              aria-pressed={activeTab === 'favoritos'}
               className={`px-space-md py-space-sm rounded-lg font-label-md text-label-md flex items-center gap-space-xs transition-all duration-200 cursor-pointer ${
                 activeTab === 'favoritos'
-                  ? 'bg-primary-container text-on-primary shadow-sm font-bold'
+                  ? 'bg-primary-container text-on-primary-container shadow-sm font-bold'
                   : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant'
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">favorite</span>
-              <span>Favoritos Guardados ({savedFavorites.length})</span>
+              <span>Favoritos Guardados ({loadingFavorites ? '…' : favoriteLoadError ? '—' : savedFavorites.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('solicitudes')}
+              aria-pressed={activeTab === 'solicitudes'}
               className={`px-space-md py-space-sm rounded-lg font-label-md text-label-md flex items-center gap-space-xs transition-all duration-200 cursor-pointer ${
                 activeTab === 'solicitudes'
-                  ? 'bg-primary-container text-on-primary shadow-sm font-bold'
+                  ? 'bg-primary-container text-on-primary-container shadow-sm font-bold'
                   : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant'
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">assignment</span>
-              <span>Mis Solicitudes ({mySolicitudes.length})</span>
+              <span>Mis Solicitudes ({loadingSolicitudes ? '…' : applicationLoadError ? '—' : mySolicitudes.length})</span>
               {mySolicitudes.some((s) => s.estado_solicitud === 'pendiente') && (
                 <span className="w-2 h-2 rounded-full bg-primary inline-block animate-pulse" />
               )}
             </button>
-          </div>
-
-          {loadError && <div role="alert" className="p-3 rounded-lg bg-error-container/30 text-error mb-4">
-            {loadError} <button type="button" onClick={() => {
-              setLoadError(''); setLoadingFavorites(true); setLoadingSolicitudes(true); setReload((value) => value + 1);
-            }} className="underline">Reintentar</button>
-          </div>}
+          </nav>
           {activeTab === 'voluntariado' && isRegularUser(user) && <VolunteerPanel key={user.id_usuario} />}
 
           {/* Tab 1: Favoritos */}
@@ -292,22 +292,19 @@ function ProfileContent() {
                   </span>
                   <p className="text-sm">Cargando tus favoritos desde la base de datos...</p>
                 </div>
+              ) : favoriteLoadError ? (
+                <div role="alert" className="p-4 rounded-xl bg-error-container/30 text-error">
+                  <p>No pudimos cargar tus favoritos. {favoriteLoadError}</p>
+                  <button type="button" className="mt-2 underline font-semibold" onClick={() => {
+                    setFavoriteLoadError(''); setLoadingFavorites(true); setFavoriteReload((value) => value + 1);
+                  }}>Reintentar favoritos</button>
+                </div>
               ) : savedFavorites.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-lg">
                   {savedFavorites.map((pet) => (
-                    <div key={pet.id} className="relative group">
-                      <PetCard pet={pet} initialFavorite onFavoriteChange={(favorite) => {
+                      <PetCard key={pet.id} pet={pet} initialFavorite favoriteAction="remove" returnTo="/perfil?tab=favoritos" onFavoriteChange={(favorite) => {
                         if (!favorite) setSavedFavorites((items) => items.filter((item) => item.id !== pet.id));
                       }} />
-                      <button
-                        type="button"
-                        onClick={() => removeFavorite(pet.id)}
-                        className="absolute bottom-4 right-4 z-10 px-2.5 py-1 rounded bg-surface-container-lowest/90 hover:bg-error-container text-error text-xs font-semibold shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">delete</span>
-                        Quitar
-                      </button>
-                    </div>
                   ))}
                 </div>
               ) : (
@@ -337,7 +334,7 @@ function ProfileContent() {
             <section className="space-y-space-lg">
               <div>
                 <h2 className="font-headline-md text-headline-md text-on-surface font-bold">
-                  Seguimiento de Adopción en Curso
+                  Mis solicitudes de adopción
                 </h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
                   Monitorea cada fase de tus postulaciones registradas en la plataforma.
@@ -350,6 +347,13 @@ function ProfileContent() {
                     progress_activity
                   </span>
                   <p className="text-sm">Consultando tus solicitudes en el servidor...</p>
+                </div>
+              ) : applicationLoadError ? (
+                <div role="alert" className="p-4 rounded-xl bg-error-container/30 text-error">
+                  <p>No pudimos cargar tus solicitudes. {applicationLoadError}</p>
+                  <button type="button" className="mt-2 underline font-semibold" onClick={() => {
+                    setApplicationLoadError(''); setLoadingSolicitudes(true); setApplicationReload((value) => value + 1);
+                  }}>Reintentar solicitudes</button>
                 </div>
               ) : mySolicitudes.length > 0 ? (
                 <div className="space-y-space-md">
@@ -395,7 +399,7 @@ function ProfileContent() {
                           </div>
 
                           <Link
-                            href={`/mascotas/${sol.id_animal}`}
+                            href={`/mascotas/${sol.id_animal}?from=${encodeURIComponent('/perfil?tab=solicitudes')}`}
                             className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
                           >
                             Ver ficha de la mascota
@@ -414,12 +418,12 @@ function ProfileContent() {
                           </p>
                           {sol.mensaje && (
                             <p>
-                              <strong className="text-on-surface">Detalle de postulación:</strong> {sol.mensaje}
+                              <strong className="text-on-surface">Detalle de postulación:</strong> <span className="whitespace-pre-line">{adoptionDetails(sol)}</span>
                             </p>
                           )}
-                          {sol.notas_internas && (
+                          {sol.respuesta_publica && (
                             <p className="p-2 bg-surface-container-low rounded-lg text-secondary">
-                              <strong>Nota del refugio:</strong> {sol.notas_internas}
+                              <strong>Respuesta del refugio:</strong> {sol.respuesta_publica}
                             </p>
                           )}
                         </div>
@@ -433,7 +437,7 @@ function ProfileContent() {
                     assignment
                   </span>
                   <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                    No tienes solicitudes de adopción activas
+                    Aún no has enviado solicitudes de adopción
                   </h3>
                   <p className="font-body-sm text-body-sm text-on-surface-variant mt-1 mb-space-md max-w-sm mx-auto">
                     Cuando encuentres al compañero ideal en el catálogo, haz clic en &quot;Postularme&quot; para iniciar tu trámite.

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Pet } from '@/data/pets';
@@ -10,6 +10,8 @@ import { api, ApiError, errorMessage } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { backendAnimalToPet } from '@/lib/adapters';
 import AdminRouteBoundary from '@/components/AdminRouteBoundary';
+import Dialog from '@/components/Dialog';
+import { contactAvailable } from '@/lib/presentation';
 
 interface PetDetailClientProps {
   pet: Pet;
@@ -22,6 +24,10 @@ export default function PetDetailClient(props: PetDetailClientProps) {
 
 function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) {
   const router = useRouter();
+  const from = useSearchParams().get('from');
+  const backHref = from === '/mascotas' || from?.startsWith('/mascotas?') ||
+    /^\/perfil\?tab=(favoritos|solicitudes)$/.test(from || '') ? from! : '/mascotas';
+  const detailHref = `/mascotas/${initialId || initialPet.id}${from ? `?from=${encodeURIComponent(backHref)}` : ''}`;
   const { user, isAuthenticated } = useAuth();
 
   const [pet, setPet] = useState<Pet>(initialPet);
@@ -31,8 +37,14 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [adoptionError, setAdoptionError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [favoriteSaving, setFavoriteSaving] = useState(false);
+  const [favoriteLoadedFor, setFavoriteLoadedFor] = useState<number | null>(null);
+  const [favoriteError, setFavoriteError] = useState('');
+  const [hasApplication, setHasApplication] = useState(false);
+  const canApply = pet.adoptionStatus === 'disponible' && !hasApplication && (!user || user.id_rol === 3);
 
   // Fetch live detail from API if available
   useEffect(() => {
@@ -47,9 +59,6 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
             setPet(adapted);
             if (adapted.images.length > 0) {
               setSelectedImage(adapted.images[0]);
-            }
-            if (backendAnimal.es_favorito !== undefined) {
-              setFavorite(backendAnimal.es_favorito);
             }
           }
         })
@@ -66,34 +75,46 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
     name: user?.nombre_completo || '',
     email: user?.correo || '',
     phone: user?.telefono || '',
-    housingType: 'casa-patio',
-    experience: 'si',
+    housingType: '',
+    experience: '',
     notes: '',
   });
 
   // Check if this animal is favorite for current user
   useEffect(() => {
+    let active = true;
     const animalIdNum = parseInt(pet.id, 10);
-    if (isAuthenticated && !isNaN(animalIdNum)) {
+    if (isAuthenticated && user?.id_rol === 3 && !isNaN(animalIdNum)) {
       api.favoritos
         .check(animalIdNum)
         .then((res) => {
-          setFavorite(res.es_favorito);
+          if (active) {
+            setFavorite(res.es_favorito);
+            setFavoriteLoadedFor(user.id_usuario);
+          }
         })
-        .catch(() => {});
+        .catch((error) => {
+          if (active) { setFavoriteError(errorMessage(error)); setFavoriteLoadedFor(user.id_usuario); }
+        });
+      api.solicitudes.getMySolicitudes().then((items) => {
+        if (active) setHasApplication(items.some((item) => item.id_animal === animalIdNum && ['pendiente', 'aprobada'].includes(item.estado_solicitud)));
+      }).catch(() => {});
     }
-  }, [isAuthenticated, user?.id_usuario, pet.id]);
+    return () => { active = false; };
+  }, [isAuthenticated, user?.id_usuario, user?.id_rol, pet.id]);
 
   const toggleFavorite = async () => {
+    if (favoriteSaving) return;
     const animalIdNum = parseInt(pet.id, 10);
     if (!isAuthenticated) {
-      alert('Inicia sesión para guardar a esta mascota en tus favoritos.');
-      router.push('/login');
+      router.push(`/login?next=${encodeURIComponent(detailHref)}`);
       return;
     }
 
     const nextState = !favorite;
     setFavorite(nextState);
+    setFavoriteSaving(true);
+    setFavoriteError('');
 
     try {
       if (!isNaN(animalIdNum)) {
@@ -104,22 +125,37 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
         }
       }
     } catch (err) {
-      console.warn('Error sincronizando favorito con API:', err);
+      setFavoriteError(errorMessage(err));
       setFavorite(!nextState);
+    } finally {
+      setFavoriteSaving(false);
     }
   };
 
   const handleSubmitAdoption = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setAdoptionError(null);
+    const errors: Record<string, string> = {};
+    if (!formData.housingType) errors.tipo_vivienda = 'Selecciona el tipo de vivienda.';
+    if (!formData.experience) errors.experiencia = 'Indica si has cuidado mascotas antes.';
+    const digits = formData.phone.replace(/\D/g, '');
+    if (!/^\+?[0-9 ()-]+$/.test(formData.phone.trim()) || digits.length < 7 || digits.length > 15)
+      errors.telefono_contacto = 'Introduce un teléfono de 7 a 15 dígitos.';
+    if (formData.notes.trim().length < 30)
+      errors.mensaje = 'Escribe al menos 30 caracteres sobre tu motivación y los cuidados que ofrecerás.';
+    setFormErrors(errors);
+    if (Object.keys(errors).length) {
+      const ids: Record<string, string> = { tipo_vivienda: 'adoption-housing', experiencia: 'adoption-experience', telefono_contacto: 'adoption-phone', mensaje: 'adoption-notes' };
+      document.getElementById(ids[Object.keys(errors)[0]])?.focus();
+      return;
+    }
     setIsSubmitting(true);
 
     const animalIdNum = parseInt(pet.id, 10);
-    const mensajeTexto = `[Vivienda: ${formData.housingType}, Experiencia: ${formData.experience}, Tel: ${formData.phone || user?.telefono || 'No especificado'}] ${formData.notes || ''}`;
 
     if (!isAuthenticated) {
-      alert('Para formalizar tu solicitud de adopción, por favor inicia sesión o crea una cuenta.');
-      router.push(`/login`);
+      router.push(`/login?next=${encodeURIComponent(detailHref)}`);
       setIsSubmitting(false);
       return;
     }
@@ -128,26 +164,20 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
       if (!isNaN(animalIdNum)) {
         await api.solicitudes.create({
           id_animal: animalIdNum,
-          mensaje: mensajeTexto,
+          mensaje: formData.notes.trim(),
+          tipo_vivienda: formData.housingType,
+          experiencia: formData.experience,
+          telefono_contacto: formData.phone.trim(),
         });
       }
       setSubmitted(true);
+      setHasApplication(true);
     } catch (err) {
       setAdoptionError(errorMessage(err));
+      if (err instanceof ApiError) setFormErrors(err.fieldErrors);
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleOpenVisit = () => {
-    setFormData((prev) => ({
-      ...prev,
-      name: user?.nombre_completo || '',
-      email: user?.correo || '',
-      phone: user?.telefono || '',
-      notes: `Hola, me gustaría agendar una visita previa de fin de semana para conocer a ${pet.name} en persona.`,
-    }));
-    setModalOpen(true);
   };
 
   if (loading || loadError) return (
@@ -155,7 +185,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
       <Navbar />
       <main className="pt-32 pb-16 px-gutter min-h-[70vh] text-center">
         {loading ? <p role="status">Cargando la ficha…</p> : <p role="alert" className="text-error">{loadError}</p>}
-        <Link href="/mascotas" className="inline-block mt-4 text-primary underline">Volver al catálogo</Link>
+        <Link href={backHref} className="inline-block mt-4 text-primary underline">Volver al catálogo</Link>
       </main>
       <Footer />
     </>
@@ -169,15 +199,15 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
         <div className="w-full max-w-[1240px] mx-auto px-gutter py-space-xl">
           {/* Breadcrumb Navigation */}
           <nav className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm mb-space-lg">
-            <Link href="/mascotas" className="hover:text-primary transition-colors flex items-center gap-1 font-medium">
+            <Link href={backHref} className="hover:text-primary transition-colors flex items-center gap-1 font-medium">
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-              <span>Volver al listado</span>
+              <span>{backHref.startsWith('/perfil') ? 'Volver a mi perfil' : 'Volver al listado'}</span>
             </Link>
             <span>/</span>
             <span className="capitalize">{pet.species}</span>
             <span>/</span>
             <span className="text-on-surface font-semibold">
-              {pet.name} (Ref. #{pet.id.toUpperCase()}-204)
+              {pet.name} (Ref. #{pet.id})
             </span>
           </nav>
 
@@ -195,16 +225,18 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                   <div className="absolute top-space-md left-space-md flex flex-wrap gap-space-xs">
                     <span className="px-space-sm py-1 bg-surface-container-lowest/90 backdrop-blur-md rounded-full text-secondary font-label-sm text-label-sm font-bold shadow-xs flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-secondary" />
-                      Listo para adopción
+                      {pet.adoptionStatus === 'disponible' ? 'Disponible para adopción' : pet.adoptionStatus === 'adoptado' ? 'Ya encontró hogar' : 'Adopción en proceso'}
                     </span>
                     <span className="px-space-sm py-1 bg-surface-container-lowest/90 backdrop-blur-md rounded-full text-primary font-label-sm text-label-sm font-bold shadow-xs">
-                      Rescate verificado
+                      Información del refugio
                     </span>
                   </div>
 
                   <button
-                    onClick={toggleFavorite}
-                    aria-label="Guardar en favoritos"
+                     onClick={toggleFavorite}
+                     disabled={favoriteSaving || (!!user && (user.id_rol !== 3 || favoriteLoadedFor !== user.id_usuario))}
+                     aria-pressed={favorite}
+                     aria-label={favorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
                     className={`absolute top-space-md right-space-md w-10 h-10 rounded-full bg-surface-container-lowest/90 backdrop-blur-md flex items-center justify-center transition-all shadow-xs hover:scale-110 cursor-pointer ${
                       favorite ? 'text-primary' : 'text-on-surface-variant'
                     }`}
@@ -240,6 +272,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                   ))}
                 </div>
               </div>
+              {favoriteError && <p role="alert" className="text-error">{favoriteError}</p>}
 
               {/* Pet Info & Attributes */}
               <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm border border-surface-container-high/40">
@@ -301,7 +334,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                         Esterilización
                       </span>
                       <span className="font-label-md text-label-md text-on-surface font-semibold">
-                        {pet.sterilized ? 'Sí, esterilizado' : 'En proceso'}
+                        {pet.sterilized === null ? 'Sin confirmar' : pet.sterilized ? 'Sí, esterilizado' : 'No'}
                       </span>
                     </div>
                   </div>
@@ -314,11 +347,12 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                         Esquema de vacunas
                       </span>
                       <span className="font-label-md text-label-md text-on-surface font-semibold">
-                        {pet.vaccinated ? 'Al día y desparasitado' : 'En seguimiento'}
+                        {pet.vaccinated === null ? 'Sin confirmar' : pet.vaccinated ? 'Al día' : 'Pendiente'}
                       </span>
                     </div>
                   </div>
                 </div>
+                <p className="mt-3 text-sm text-on-surface-variant">Desparasitación: {pet.dewormed === null ? 'Sin confirmar' : pet.dewormed ? 'Al día' : 'Pendiente'}. Confirma los cuidados con el refugio.</p>
               </div>
 
               {/* Story */}
@@ -359,21 +393,20 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                     </div>
                     <div>
                       <span className="font-label-sm text-label-sm text-secondary font-bold uppercase tracking-wider">
-                        Refugio Aliado Verificado
+                        Refugio responsable
                       </span>
                       <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
                         {pet.shelter}
                       </h3>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenVisit}
+                  {contactAvailable(pet.shelterContact?.phone) && <a
+                    href={`tel:${pet.shelterContact?.phone.replace(/[^\d+]/g, '')}`}
                     className="px-space-md py-space-sm rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-label-md hover:bg-surface-container transition-colors shadow-xs inline-flex items-center gap-1.5 font-semibold cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px]">event_available</span>
-                    Agendar visita previa
-                  </button>
+                    Consultar visitas
+                  </a>}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-md text-body-sm font-body-sm text-on-surface-variant pt-space-sm border-t border-surface-container-high/60">
@@ -382,7 +415,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                       pin_drop
                     </span>
                     <span>
-                      {pet.shelterContact?.address || 'Instalaciones centrales verificadas'}
+                      {pet.shelterContact?.address || 'Dirección sin confirmar'}
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
@@ -390,7 +423,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                       schedule
                     </span>
                     <span>
-                      {pet.shelterContact?.hours || 'Mar a Dom: 10:30 - 17:30 hrs'}
+                      {pet.shelterContact?.hours || 'Consulta horarios con el refugio.'}
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
@@ -398,8 +431,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                       mark_email_read
                     </span>
                     <span>
-                      {pet.shelterContact?.email || 'contacto@adopta.org'}<br />
-                      {pet.shelterContact?.phone || '+56 9 8456 2210'}
+                      {contactAvailable(pet.shelterContact?.phone) ? <a className="underline" href={`tel:${pet.shelterContact?.phone.replace(/[^\d+]/g, '')}`}>{pet.shelterContact?.phone}</a> : 'Contacto no disponible en esta instalación'}
                     </span>
                   </div>
                 </div>
@@ -472,14 +504,20 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                 <div className="pt-space-xs space-y-space-sm">
                   <button
                     type="button"
+                    disabled={!canApply}
                     onClick={() => {
+                      if (!isAuthenticated) {
+                        router.push(`/login?next=${encodeURIComponent(detailHref)}`);
+                        return;
+                      }
+                      setAdoptionError(null);
                       setFormData((prev) => ({ ...prev, name: user?.nombre_completo || '', email: user?.correo || '', phone: user?.telefono || '' }));
                       setModalOpen(true);
                     }}
-                    className="w-full py-space-md px-space-lg rounded-xl bg-primary-container text-on-primary font-headline-sm text-body-md font-bold hover:bg-primary transition-all duration-200 shadow-md flex items-center justify-center gap-2 group text-center cursor-pointer"
+                    className="w-full py-space-md px-space-lg rounded-xl bg-primary-container text-on-primary-container font-headline-sm text-body-md font-bold hover:bg-primary hover:text-on-primary transition-all duration-200 shadow-md flex items-center justify-center gap-2 group text-center cursor-pointer disabled:opacity-60"
                   >
                     <span className="material-symbols-outlined text-[20px]">pets</span>
-                    <span>Iniciar Solicitud de Adopción</span>
+                    <span>{hasApplication ? 'Ya enviaste una solicitud' : canApply ? 'Iniciar Solicitud de Adopción' : 'No disponible para solicitudes'}</span>
                     <span className="material-symbols-outlined text-[20px] transition-transform group-hover:translate-x-1">
                       arrow_forward
                     </span>
@@ -489,7 +527,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                     <span className="material-symbols-outlined text-secondary text-[18px]">
                       verified_user
                     </span>
-                    <span>Sin costo inicial • Tiempo de respuesta estimado: <strong>48h</strong></span>
+                    <span>Consulta el avance en Mi Perfil. El plazo de respuesta depende del refugio.</span>
                   </div>
                 </div>
               </div>
@@ -500,7 +538,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                 </div>
                 <div className="text-on-surface-variant font-body-sm text-body-sm leading-relaxed">
                   <span className="font-semibold text-on-surface block">Proceso de adopción seguro</span>
-                  Entregas bajo contrato legal, con microchip registrado y apoyo de adiestramiento conductual post-adopción.
+                  Antes de adoptar, confirma con el refugio los requisitos, cuidados y condiciones de entrega.
                 </div>
               </div>
             </aside>
@@ -509,10 +547,12 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
 
         {/* Adoption Application Modal */}
         {modalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <Dialog titleId="adoption-title" busy={isSubmitting} onClose={() => { setModalOpen(false); setSubmitted(false); }}>
             <div className="bg-surface-container-lowest rounded-2xl max-w-lg w-full p-space-lg shadow-2xl relative border border-surface-container-high">
               <button
                 type="button"
+                disabled={isSubmitting}
+                aria-label="Cerrar solicitud"
                 onClick={() => {
                   setModalOpen(false);
                   setSubmitted(false);
@@ -526,22 +566,24 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-primary material-symbols-outlined text-[24px]">pets</span>
-                    <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    <h3 id="adoption-title" className="pr-7 font-headline-sm text-headline-sm text-on-surface font-bold">
                       Postulación para adoptar a {pet.name}
                     </h3>
                   </div>
                   <p className="font-body-sm text-body-sm text-on-surface-variant mb-space-md">
-                    Tu postulación será enviada al equipo de <strong>{pet.shelter}</strong>. Te responderán por WhatsApp o correo en menos de 48 horas.
+                    Tu postulación será enviada al equipo de <strong>{pet.shelter}</strong>. Revisa la respuesta en Mi Perfil. Se enviarán el nombre y correo de tu cuenta.
                   </p>
 
-                  <form onSubmit={handleSubmitAdoption} className="space-y-space-sm">
+                   <form noValidate onSubmit={handleSubmitAdoption} className="space-y-space-sm">
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                      <label htmlFor="adoption-name" className="block text-xs font-semibold text-on-surface mb-1">
                         Nombre Completo
                       </label>
-                      <input
+                       <input
+                         id="adoption-name"
+                         readOnly
                         type="text"
-                        required
+                           required
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         placeholder="Ej. Camila Navarro"
@@ -549,12 +591,14 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs font-semibold text-on-surface mb-1">
+                        <label htmlFor="adoption-email" className="block text-xs font-semibold text-on-surface mb-1">
                           Correo
                         </label>
-                        <input
+                         <input
+                           id="adoption-email"
+                           readOnly
                           type="email"
                           required
                           value={formData.email}
@@ -564,51 +608,80 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-on-surface mb-1">
+                        <label htmlFor="adoption-phone" className="block text-xs font-semibold text-on-surface mb-1">
                           Teléfono / WhatsApp
                         </label>
-                        <input
-                          type="tel"
-                          required
+                         <input
+                           id="adoption-phone"
+                           type="tel"
+                           required
+                           aria-invalid={!!formErrors.telefono_contacto}
+                           aria-describedby={formErrors.telefono_contacto ? 'phone-error' : undefined}
                           value={formData.phone}
-                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          placeholder="+56 9 1234 5678"
+                           onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setFormErrors({ ...formErrors, telefono_contacto: '' }); }}
+                           placeholder="Tu número de contacto"
                           className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm border border-transparent focus:border-primary outline-none"
-                        />
+                         />
+                        {formErrors.telefono_contacto && <p id="phone-error" role="alert" className="text-error text-xs mt-1">{formErrors.telefono_contacto}</p>}
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                      <label htmlFor="adoption-housing" className="block text-xs font-semibold text-on-surface mb-1">
                         Tipo de Vivienda
                       </label>
-                      <select
+                       <select
+                          id="adoption-housing"
+                         required
+                         aria-invalid={!!formErrors.tipo_vivienda}
+                         aria-describedby={formErrors.tipo_vivienda ? 'housing-error' : undefined}
                         value={formData.housingType}
-                        onChange={(e) => setFormData({ ...formData, housingType: e.target.value })}
+                        onChange={(e) => { setFormData({ ...formData, housingType: e.target.value }); setFormErrors({ ...formErrors, tipo_vivienda: '' }); }}
                         className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm border border-transparent focus:border-primary outline-none"
-                      >
+                       >
+                         <option value="" disabled>Selecciona tu vivienda</option>
                         <option value="casa-patio">Casa con patio cerrado</option>
                         <option value="depto-malla">Departamento con protecciones/malla</option>
                         <option value="depto-sin-malla">Departamento regular</option>
                         <option value="parcela">Parcela / Campo</option>
-                      </select>
+                       </select>
+                       {formErrors.tipo_vivienda && <p id="housing-error" role="alert" className="text-error text-xs mt-1">{formErrors.tipo_vivienda}</p>}
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">
-                        Mensaje o consultas para el refugio
+                      <label htmlFor="adoption-experience" className="block text-xs font-semibold mb-1">¿Has cuidado mascotas antes?</label>
+                      <select id="adoption-experience" value={formData.experience} required
+                        aria-invalid={!!formErrors.experiencia} aria-describedby={formErrors.experiencia ? 'experience-error' : undefined}
+                        onChange={(event) => { setFormData({ ...formData, experience: event.target.value }); setFormErrors({ ...formErrors, experiencia: '' }); }}
+                        className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm">
+                        <option value="" disabled>Selecciona una respuesta</option>
+                        <option value="si">Sí</option><option value="no">No, sería mi primera mascota</option>
+                      </select>
+                      {formErrors.experiencia && <p id="experience-error" role="alert" className="text-error text-xs mt-1">{formErrors.experiencia}</p>}
+                    </div>
+                    <div>
+                      <label htmlFor="adoption-notes" className="block text-xs font-semibold text-on-surface mb-1">
+                        Motivación y cuidados que ofrecerás
                       </label>
-                      <textarea
+                       <textarea
+                         id="adoption-notes"
+                          maxLength={3000}
+                          minLength={30}
+                          required
+                          aria-invalid={!!formErrors.mensaje}
+                          aria-describedby="notes-help notes-error"
                         rows={3}
                         value={formData.notes}
-                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                        onChange={(e) => { setFormData({ ...formData, notes: e.target.value }); setFormErrors({ ...formErrors, mensaje: '' }); }}
                         placeholder="Cuéntanos un poco sobre tu rutina, otros animales en casa o tu disponibilidad..."
                         className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm border border-transparent focus:border-primary outline-none"
-                      />
+                       />
+                      <p id="notes-help" className="text-xs text-on-surface-variant mt-1">Obligatorio: explica por qué deseas adoptar, tu rutina y los cuidados que puedes ofrecer. {formData.notes.trim().length}/3000 caracteres (mínimo 30).</p>
+                      <p id="notes-error" role={formErrors.mensaje ? 'alert' : undefined} className="text-error text-xs mt-1">{formErrors.mensaje}</p>
                     </div>
 
                     {adoptionError && (
-                      <div className="p-2.5 rounded-lg bg-error-container/40 border border-error text-error text-xs">
+                      <div role="alert" className="p-2.5 rounded-lg bg-error-container/40 border border-error text-error text-xs">
                         {adoptionError}
                       </div>
                     )}
@@ -616,7 +689,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="w-full py-2.5 rounded-lg bg-primary text-white font-label-md font-bold hover:bg-primary-container transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer"
+                      className="w-full py-2.5 rounded-lg bg-primary text-on-primary font-label-md font-bold hover:bg-primary-container hover:text-on-primary-container transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer"
                     >
                       {isSubmitting ? (
                         <>
@@ -639,16 +712,16 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                   <div className="w-16 h-16 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center mx-auto mb-space-sm">
                     <span className="material-symbols-outlined text-[36px]">check_circle</span>
                   </div>
-                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold mb-2">
+                  <h3 id="adoption-title" className="font-headline-sm text-headline-sm text-on-surface font-bold mb-2">
                     ¡Solicitud enviada con éxito!
                   </h3>
                   <p className="font-body-sm text-body-sm text-on-surface-variant mb-space-lg leading-relaxed">
                     Hemos registrado tu interés en <strong>{pet.name}</strong>. El equipo de {pet.shelter} revisará tu perfil y te contactará a la brevedad.
                   </p>
-                  <div className="flex gap-2 justify-center">
+                  <div className="flex flex-wrap gap-2 justify-center">
                     <Link
-                      href="/perfil"
-                      className="px-space-md py-2 bg-primary text-white rounded-lg font-label-md font-bold"
+                      href="/perfil?tab=solicitudes"
+                      className="px-space-md py-2 bg-primary text-on-primary rounded-lg font-label-md font-bold"
                     >
                       Ver estado en Mi Perfil
                     </Link>
@@ -663,7 +736,7 @@ function PetDetailContent({ pet: initialPet, initialId }: PetDetailClientProps) 
                 </div>
               )}
             </div>
-          </div>
+          </Dialog>
         )}
       </main>
 

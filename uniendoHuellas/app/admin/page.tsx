@@ -5,13 +5,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
-import { api, BackendRefugio, DashboardStats, errorMessage } from '@/lib/api';
+import { api, BackendAnimal, BackendRefugio, DashboardStats, errorMessage } from '@/lib/api';
 import SessionStatus from '@/components/SessionStatus';
 import { AdminVolunteerPanel } from '@/components/VolunteerPanel';
 import ImagePreview from '@/components/ImagePreview';
 import { backendAnimalToPet } from '@/lib/adapters';
+import Dialog from '@/components/Dialog';
+import ThemeToggle from '@/components/ThemeToggle';
+import { adoptionDetails, normalizeSearch } from '@/lib/presentation';
 
 interface InventoryItem {
+  source: BackendAnimal;
   id: string;
   code: string;
   name: string;
@@ -32,6 +36,9 @@ interface ApplicationItem {
   email: string;
   date: string;
   housing: string;
+  phone: string;
+  response: string;
+  internalNotes: string;
   status: 'Pendiente' | 'Entrevista' | 'Aprobada' | 'Rechazada';
 }
 
@@ -51,6 +58,13 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [editing, setEditing] = useState<BackendAnimal | null>(null);
+  const [health, setHealth] = useState({ vacunado: '', esterilizado: '', desparasitado: '' });
+  const [animalStatus, setAnimalStatus] = useState('disponible');
+  const [decision, setDecision] = useState<{ id: string; status: ApplicationItem['status'] } | null>(null);
+  const [publicReply, setPublicReply] = useState('');
+  const [internalNotes, setInternalNotes] = useState('');
   const [shelters, setShelters] = useState<BackendRefugio[]>([]);
   const [shelterId, setShelterId] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -87,7 +101,8 @@ export default function AdminPage() {
           if (a.estado_adopcion === 'adoptado') st = 'Adoptado';
           else if (a.estado_adopcion === 'en_proceso') st = 'En Proceso';
 
-          return {
+           return {
+             source: a,
             id: String(a.id_animal),
             code: `#CH-${a.id_animal.toString().padStart(4, '0')}`,
             name: a.nombre,
@@ -119,7 +134,10 @@ export default function AdminPage() {
               day: 'numeric',
               month: 'short',
             }),
-            housing: s.mensaje || 'Sin detalles adicionales',
+            housing: adoptionDetails(s) || 'Sin detalles adicionales',
+            phone: s.telefono_contacto || s.usuario?.telefono || '',
+            response: s.respuesta_publica || '',
+            internalNotes: s.notas_internas || '',
             status: st,
           };
         });
@@ -150,7 +168,7 @@ export default function AdminPage() {
     setSaving(true);
     setError('');
     try {
-      await api.animales.createWithImage({
+      const data = {
         id_refugio: Number(shelterId),
         nombre: newAnimal.name,
         especie: newAnimal.species,
@@ -158,11 +176,18 @@ export default function AdminPage() {
         sexo: newAnimal.gender,
         edad_estimada: newAnimal.age || '1 año',
         tamano: newAnimal.size || 'Mediano',
-        descripcion: newAnimal.description.trim() || undefined,
+        descripcion: newAnimal.description.trim(),
         es_urgente: newAnimal.urgent,
-        estado_adopcion: 'disponible',
-      }, photo);
+        estado_adopcion: editing ? animalStatus : 'disponible',
+        ...Object.fromEntries(Object.entries(health).map(([key, value]) => [key, value === '' ? null : value === 'si'])),
+      };
+      if (editing) await api.animales.update(editing.id_animal, data);
+      else await api.animales.createWithImage(data, photo);
 
+      setSuccess(editing ? 'Ficha actualizada correctamente.' : 'Mascota registrada correctamente.');
+      setEditing(null);
+      setHealth({ vacunado: '', esterilizado: '', desparasitado: '' });
+      setAnimalStatus('disponible');
       setModalOpen(false);
       setNewAnimal({
         name: '',
@@ -187,11 +212,28 @@ export default function AdminPage() {
   const closeModal = () => {
     if (saving) return;
     setModalOpen(false);
+    setEditing(null);
+    setHealth({ vacunado: '', esterilizado: '', desparasitado: '' });
+    setAnimalStatus('disponible');
     setPhoto(null);
     setShelterId('');
     setError('');
     setNewAnimal({ name: '', species: 'Perro', raza: 'Mestizo', gender: 'Macho',
       age: '1 año', size: 'Mediano', description: '', urgent: false });
+  };
+
+  const editAnimal = (animal: BackendAnimal) => {
+    setEditing(animal);
+    setShelterId(String(animal.id_refugio));
+    setNewAnimal({ name: animal.nombre, species: animal.especie, raza: animal.raza,
+      gender: animal.sexo, age: animal.edad_estimada, size: animal.tamano,
+      description: animal.descripcion || '', urgent: animal.es_urgente });
+    setHealth({ vacunado: animal.vacunado == null ? '' : animal.vacunado ? 'si' : 'no',
+      esterilizado: animal.esterilizado == null ? '' : animal.esterilizado ? 'si' : 'no',
+      desparasitado: animal.desparasitado == null ? '' : animal.desparasitado ? 'si' : 'no' });
+    setAnimalStatus(animal.estado_adopcion);
+    setError('');
+    setModalOpen(true);
   };
 
   const toggleUrgency = async (item: InventoryItem) => {
@@ -212,8 +254,11 @@ export default function AdminPage() {
       const backendStatus = newStatus === 'Aprobada' ? 'aprobada' : newStatus === 'Rechazada' ? 'rechazada' : 'pendiente';
       await api.solicitudes.updateStatus(id, {
         estado_solicitud: backendStatus,
-        notas_internas: `Estado actualizado a ${newStatus} desde el panel de control.`,
+        notas_internas: internalNotes,
+        respuesta_publica: publicReply.trim() || undefined,
       });
+      setDecision(null);
+      setSuccess(`Solicitud ${id}: ${newStatus.toLowerCase()}.`);
 
       setApplications((prev) =>
         prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app))
@@ -228,9 +273,7 @@ export default function AdminPage() {
 
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.species.toLowerCase().includes(searchQuery.toLowerCase());
+      normalizeSearch(`${item.name} ${item.code} ${item.species} ${item.shelter}`).includes(normalizeSearch(searchQuery));
     const matchesStatus =
       statusFilter === 'todos' ||
       (statusFilter === 'disponible' && item.status === 'Disponible') ||
@@ -241,19 +284,17 @@ export default function AdminPage() {
   });
 
   const exportReport = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      'Codigo,Nombre,Especie,Edad,Refugio,Estado,Urgente\n' +
-      inventory
-        .map((i) => `"${i.code}","${i.name}","${i.species}","${i.age}","${i.shelter}","${i.status}","${i.urgent ? 'Sí' : 'No'}"`)
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const cell = (value: string) => `"${(/^[=+\-@\t\r]/.test(value) ? "'" : '') + value.replace(/"/g, '""')}"`;
+    const csvContent = '\uFEFFCodigo,Nombre,Especie,Edad,Refugio,Estado,Urgente\n' +
+      filteredInventory.map((i) => [i.code, i.name, i.species, i.age, i.shelter, i.status, i.urgent ? 'Sí' : 'No'].map(cell).join(',')).join('\n');
+    const encodedUri = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
     link.setAttribute('download', `inventario_refugio_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(encodedUri);
   };
 
   if (authLoading || !allowed) return <SessionStatus />;
@@ -268,7 +309,7 @@ export default function AdminPage() {
           <div className="px-space-xs py-space-xs">
             <Logo />
             <span className="font-label-sm text-xs text-primary font-bold tracking-wider uppercase block mt-1">
-              Portal Oficial de Refugios
+              Administración de adopciones
             </span>
           </div>
 
@@ -368,6 +409,7 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-space-md shrink-0">
+            <ThemeToggle />
             <button
               type="button"
               onClick={() => { setIsLoading(true); setError(''); void loadAdminData(); }}
@@ -390,6 +432,7 @@ export default function AdminPage() {
         {/* Content Container */}
         <main className="p-space-lg lg:p-space-xl flex-1 flex flex-col gap-space-xl">
           {error && <p role="alert" className="p-3 rounded-lg bg-error-container/40 text-error">{error}</p>}
+          {success && <p role="status" className="p-3 rounded-lg bg-secondary-container text-on-secondary-container">{success}</p>}
           {isLoading && <p role="status">Actualizando datos…</p>}
           {/* Hero Welcome & Actions */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
@@ -579,6 +622,8 @@ export default function AdminPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4">
+                          <button type="button" disabled={saving} onClick={() => editAnimal(item.source)}
+                            className="px-3 py-2 text-xs font-bold text-primary underline">Editar ficha</button>
                           <button type="button" disabled={saving} aria-pressed={item.urgent}
                             onClick={() => toggleUrgency(item)}
                             className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-60 ${item.urgent ? 'bg-error-container text-error' : 'bg-surface-container text-on-surface-variant'}`}>
@@ -625,8 +670,16 @@ export default function AdminPage() {
                         </td>
                         <td className="py-3 px-4 font-semibold text-primary">{app.petName}</td>
                         <td className="py-3 px-4 text-xs text-on-surface-variant">{app.date}</td>
-                        <td className="py-3 px-4 text-xs text-on-surface-variant max-w-xs truncate">
-                          {app.housing}
+                        <td className="py-3 px-4 text-xs text-on-surface-variant min-w-48 max-w-sm">
+                          <details>
+                            <summary className="cursor-pointer text-primary font-semibold">Ver postulación completa</summary>
+                            <div className="mt-2 whitespace-pre-wrap break-words space-y-2">
+                              <p>{app.housing}</p>
+                              <p>Teléfono: {app.phone || 'Sin registrar'}</p>
+                              {app.response && <p>Respuesta pública: {app.response}</p>}
+                              {app.internalNotes && <p>Notas internas: {app.internalNotes}</p>}
+                            </div>
+                          </details>
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -647,7 +700,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 disabled={saving}
-                                onClick={() => handleUpdateAppStatus(app.id, 'Aprobada')}
+                                onClick={() => { setError(''); setPublicReply(''); setInternalNotes(''); setDecision({ id: app.id, status: 'Aprobada' }); }}
                                 className="px-2.5 py-1 rounded bg-secondary text-white text-xs font-bold hover:bg-secondary/90 transition-colors cursor-pointer"
                               >
                                 Aprobar
@@ -655,7 +708,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 disabled={saving}
-                                onClick={() => handleUpdateAppStatus(app.id, 'Rechazada')}
+                                onClick={() => { setError(''); setPublicReply(''); setInternalNotes(''); setDecision({ id: app.id, status: 'Rechazada' }); }}
                                 className="px-2.5 py-1 rounded bg-error-container text-error text-xs font-bold hover:bg-error-container/80 transition-colors cursor-pointer"
                               >
                                 Rechazar
@@ -676,14 +729,14 @@ export default function AdminPage() {
 
       {/* New Animal Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="animal-dialog-title" className="bg-surface-container-lowest rounded-2xl max-w-md w-full p-6 shadow-xl border border-surface-container-high max-h-[90vh] overflow-y-auto">
+        <Dialog titleId="animal-dialog-title" busy={saving} onClose={closeModal}>
+          <div className="bg-surface-container-lowest rounded-2xl w-full p-6 shadow-xl border border-surface-container-high">
             <h3 id="animal-dialog-title" className="font-headline-sm text-lg font-bold text-on-surface flex items-center gap-2 mb-1">
               <span className="material-symbols-outlined text-primary">add_circle</span>
-              Nuevo Ingreso de Animal
+              {editing ? 'Editar ficha del animal' : 'Nuevo Ingreso de Animal'}
             </h3>
             <p className="font-body-sm text-xs text-on-surface-variant mb-4">
-              Registra una nueva mascota a la base de datos oficial del refugio.
+              {editing ? 'Actualiza los datos reales de la mascota. Sin confirmar no implica un tratamiento realizado.' : 'Registra una nueva mascota en la base de datos del refugio.'}
             </p>
 
             <form onSubmit={handleAddAnimal} className="space-y-3">
@@ -796,7 +849,24 @@ export default function AdminPage() {
                 Caso urgente
               </label>
 
-              <div className="space-y-2">
+              {editing && <div>
+                <label htmlFor="animal-status" className="block text-xs font-semibold mb-1">Estado de adopción</label>
+                <select id="animal-status" value={animalStatus} onChange={(event) => setAnimalStatus(event.target.value)}
+                  className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm">
+                  <option value="disponible">Disponible</option><option value="en_proceso">En proceso</option><option value="adoptado">Adoptado</option>
+                </select>
+                <p className="text-xs mt-1">Para adjudicar una solicitud, apruébala desde Postulaciones. Las adopciones aprobadas no se pueden reabrir aquí.</p>
+              </div>}
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-semibold">Salud registrada por el refugio</legend>
+                {([['vacunado', 'Vacunación al día'], ['esterilizado', 'Esterilización'], ['desparasitado', 'Desparasitación al día']] as const).map(([key, label]) =>
+                  <div key={key}><label htmlFor={`health-${key}`} className="text-xs">{label}</label>
+                    <select id={`health-${key}`} value={health[key]} onChange={(event) => setHealth({ ...health, [key]: event.target.value })}
+                      className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm">
+                      <option value="">Sin confirmar</option><option value="si">Sí</option><option value="no">No / pendiente</option>
+                    </select></div>)}
+              </fieldset>
+              {!editing && <div className="space-y-2">
                 <label htmlFor="animal-photo" className="block text-xs font-semibold">Imagen del animal (opcional)</label>
                 <input id="animal-photo" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" disabled={saving}
                   className="w-full text-sm"
@@ -817,7 +887,7 @@ export default function AdminPage() {
                   <button type="button" disabled={saving} className="text-error text-sm underline"
                     onClick={() => { setPhoto(null); if (photoInput.current) photoInput.current.value = ''; }}>Quitar imagen</button>
                 </>}
-              </div>
+              </div>}
 
               <div className="pt-2 flex justify-end gap-2">
                 <button
@@ -838,8 +908,27 @@ export default function AdminPage() {
               </div>
             </form>
           </div>
-        </div>
+        </Dialog>
       )}
+      {decision && <Dialog titleId="decision-title" busy={saving} onClose={() => setDecision(null)}>
+        <form className="bg-surface-container-lowest rounded-2xl p-6 space-y-4" onSubmit={(event) => { event.preventDefault(); void handleUpdateAppStatus(decision.id, decision.status); }}>
+          <h3 id="decision-title" className="text-lg font-bold">{decision.status === 'Aprobada' ? 'Aprobar adopción' : 'Rechazar solicitud'} #{decision.id}</h3>
+          <p className="text-sm">{decision.status === 'Aprobada' ? 'La mascota pasará a adoptada y se cerrarán las demás solicitudes pendientes con un aviso. Esta resolución es definitiva.' : 'La persona verá la resolución en su perfil. Esta resolución es definitiva.'}</p>
+          <label className="block text-sm">Respuesta para el solicitante (opcional)
+            <textarea maxLength={3000} value={publicReply} onChange={(event) => setPublicReply(event.target.value)}
+              className="w-full bg-surface-container-low rounded-lg p-3 mt-1" />
+          </label>
+          <label className="block text-sm">Notas internas (solo personal)
+            <textarea maxLength={3000} value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)}
+              className="w-full bg-surface-container-low rounded-lg p-3 mt-1" />
+          </label>
+          {error && <p role="alert" className="text-error">{error}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={saving} onClick={() => setDecision(null)}>Cancelar</button>
+            <button type="submit" disabled={saving} className="bg-primary text-white rounded-lg px-4 py-2">{saving ? 'Guardando…' : 'Confirmar resolución'}</button>
+          </div>
+        </form>
+      </Dialog>}
     </div>
   );
 }

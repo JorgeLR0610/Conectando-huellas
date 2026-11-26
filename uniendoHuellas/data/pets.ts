@@ -7,9 +7,10 @@ export interface Pet {
   ageCategory: 'cachorro' | 'joven' | 'adulto' | 'senior';
   gender: 'Macho' | 'Hembra' | 'Pareja';
   size: 'Pequeño' | 'Mediano' | 'Grande' | string;
-  energy: 'Baja' | 'Moderada' | 'Alta';
+  energy: 'Baja' | 'Moderada' | 'Alta' | 'Sin confirmar';
   location: string;
-  locationCity: 'cdmx' | 'gdl' | 'mty' | 'pue' | 'all';
+  locationCity: string;
+  adoptionStatus?: string;
   shelter: string;
   shelterContact?: {
     email: string;
@@ -22,9 +23,9 @@ export interface Pet {
   urgencyTag?: string;
   description: string;
   story?: string;
-  vaccinated: boolean;
-  sterilized: boolean;
-  dewormed: boolean;
+  vaccinated: boolean | null;
+  sterilized: boolean | null;
+  dewormed: boolean | null;
   images: string[];
 }
 

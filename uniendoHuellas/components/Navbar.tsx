@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from './Logo';
 import { useAuth } from '@/context/AuthContext';
+import ThemeToggle from './ThemeToggle';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -19,12 +20,13 @@ export default function Navbar() {
   ] : [
     { href: '/', label: 'Inicio' },
     { href: '/mascotas', label: 'Buscar Mascotas' },
+    { href: '/refugios', label: 'Refugios' },
     { href: '/#proceso', label: 'Cómo Adoptar' },
     ...(isAuthenticated ? [{ href: '/perfil', label: 'Mi Perfil' }] : []),
   ];
 
   return (
-    <header className="fixed top-0 w-full z-50 bg-[#fbf8ff]/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-[#e0e0fc]/50">
+    <header className="fixed top-0 w-full z-50 bg-background/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-surface-variant/50">
       <div className="h-20 max-w-[1240px] mx-auto px-gutter flex items-center justify-between gap-space-md">
         {/* Brand */}
         <Logo />
@@ -50,7 +52,8 @@ export default function Navbar() {
         </nav>
 
         {/* Action Items */}
-        <div className="flex items-center gap-space-md">
+        <div className="flex items-center gap-2 sm:gap-space-md">
+          <ThemeToggle />
           {admin && <button type="button" onClick={() => { logout(); router.replace('/login'); }}
             className="text-error text-sm font-semibold">Cerrar sesión</button>}
           {!isLoading && !isAuthenticated ? (
@@ -64,9 +67,9 @@ export default function Navbar() {
 
           {!isLoading && !isAuthenticated && <Link
             href="/registro"
-            className="hidden sm:inline-flex items-center justify-center px-space-md py-space-sm rounded-lg bg-primary-container text-on-primary font-label-md text-label-md hover:bg-primary transition-all shadow-[0_2px_8px_-2px_rgba(43,45,66,0.04)] hover:-translate-y-0.5 active:translate-y-0"
+            className="hidden sm:inline-flex items-center justify-center px-space-md py-space-sm rounded-lg bg-primary-container text-on-primary-container font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-all shadow-[0_2px_8px_-2px_rgba(43,45,66,0.04)] hover:-translate-y-0.5 active:translate-y-0"
           >
-            Donar / Voluntario
+              Ser voluntario
           </Link>}
 
           <Link

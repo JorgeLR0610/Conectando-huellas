@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { api, User, RegisterData } from '@/lib/api';
+import { api, ApiError, User, RegisterData } from '@/lib/api';
 import { roleLabel } from '@/lib/auth';
 
 interface AuthContextType {
@@ -29,15 +29,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     setSessionVersion((version) => version + 1);
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_role');
+    try {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_role');
+    } catch { /* Public pages must remain usable when storage is blocked. */ }
   }, []);
 
   const saveUser = useCallback((data: User) => {
     setUser(data);
-    localStorage.setItem('auth_user', JSON.stringify(data));
-    localStorage.setItem('auth_role', roleLabel(data));
+    try {
+      localStorage.setItem('auth_user', JSON.stringify(data));
+      localStorage.setItem('auth_role', roleLabel(data));
+    } catch { /* Cached profile data is optional; authorization remains server-side. */ }
   }, []);
 
   useEffect(() => {
@@ -45,12 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const restore = async () => {
       setIsLoading(true);
       // Never trust cached roles/user data before /me validates the session.
-      const storedToken = localStorage.getItem('auth_token');
-      if (!storedToken) {
-        if (active) { setUser(null); setToken(null); setIsLoading(false); }
-        return;
-      }
       try {
+        const storedToken = localStorage.getItem('auth_token');
+        if (!storedToken) {
+          if (active) { setUser(null); setToken(null); }
+          return;
+        }
         const data = await api.auth.me();
         if (active && storedToken === localStorage.getItem('auth_token')) {
           setToken(storedToken);
@@ -90,7 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (correo: string, password: string) => {
     const response = await api.auth.login(correo.trim(), password);
-    localStorage.setItem('auth_token', response.access_token);
+    try { localStorage.setItem('auth_token', response.access_token); }
+    catch { throw new ApiError(400, 'Permite el almacenamiento local de este sitio para iniciar sesión. Puedes seguir explorando el catálogo sin cuenta.'); }
     setToken(response.access_token);
     saveUser(response.usuario);
     return response.usuario;

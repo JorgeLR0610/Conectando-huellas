@@ -26,12 +26,18 @@ function HomeContent() {
 
   const [featuredPets, setFeaturedPets] = useState<Pet[]>([]);
   const [catalogError, setCatalogError] = useState('');
+  const [metrics, setMetrics] = useState<{ animals: number; shelters: number; cities: number; urgent: number } | null>(null);
+  const [locations, setLocations] = useState<[string, string][]>([]);
 
   useEffect(() => {
-    api.animales
-      .getCatalogo()
-      .then((data) => {
+    Promise.all([api.animales.getCatalogo(), api.dashboard.getRefugiosDirectorio()])
+      .then(([data, shelters]) => {
         setFeaturedPets(backendAnimalsToPets(data.slice(0, 3)));
+        const pets = backendAnimalsToPets(data);
+        setLocations(Array.from(new Map(pets.map((pet) => [pet.locationCity, pet.location])).entries()).sort((a, b) => a[1].localeCompare(b[1], 'es')));
+        setMetrics({ animals: data.length, shelters: shelters.length,
+          cities: new Set(shelters.map((shelter) => shelter.ciudad)).size,
+          urgent: data.filter((animal) => animal.es_urgente).length });
       })
       .catch((err) => {
         setCatalogError(errorMessage(err));
@@ -110,7 +116,7 @@ function HomeContent() {
                       </div>
                     </div>
                     <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      Animales vacunados, esterilizados y con seguimiento integral.
+                      Consulta la salud registrada y confirma los cuidados con cada refugio.
                     </p>
                   </div>
                 </div>
@@ -130,10 +136,10 @@ function HomeContent() {
                       </div>
                       <div>
                         <p className="font-label-md text-label-md text-on-surface font-semibold">
-                          Canela • Adoptada hace 3 semanas
+                          Un nuevo comienzo es posible
                         </p>
                         <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          “Llegó tímida y hoy corre feliz cada mañana.”
+                          Fotografía ilustrativa de nuestra comunidad.
                         </p>
                       </div>
                     </div>
@@ -194,10 +200,7 @@ function HomeContent() {
                       className="w-full appearance-none bg-surface-container-low px-space-md py-space-sm rounded-lg font-body-md text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/40 transition-all pr-8 border border-transparent focus:border-primary-container"
                     >
                       <option value="all">Todas las regiones</option>
-                      <option value="cdmx">Ciudad de México y Área Metro</option>
-                      <option value="gdl">Guadalajara, Jalisco</option>
-                      <option value="mty">Monterrey, Nuevo León</option>
-                      <option value="pue">Puebla y alrededores</option>
+                      {locations.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                       expand_more
@@ -219,10 +222,10 @@ function HomeContent() {
                       className="w-full appearance-none bg-surface-container-low px-space-md py-space-sm rounded-lg font-body-md text-body-md text-on-surface outline-none focus:ring-2 focus:ring-primary/40 transition-all pr-8 border border-transparent focus:border-primary-container"
                     >
                       <option value="all">Cualquier edad</option>
-                      <option value="cachorro">Cachorro / Bebé (0-1 año)</option>
-                      <option value="joven">Joven (1-3 años)</option>
+                      <option value="cachorro">Cachorro / Bebé (menos de 1 año)</option>
+                      <option value="joven">Joven (1-2 años)</option>
                       <option value="adulto">Adulto (3-7 años)</option>
-                      <option value="senior">Senior (7+ años)</option>
+                      <option value="senior">Senior (8+ años)</option>
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
                       expand_more
@@ -282,10 +285,10 @@ function HomeContent() {
             <div className="max-w-[1240px] mx-auto px-gutter">
               <div className="text-center max-w-2xl mx-auto mb-space-xl">
                 <h2 className="font-headline-lg text-headline-lg text-on-surface">
-                  El impacto de cada adopción
+                  Nuestra red hoy
                 </h2>
                 <p className="font-body-md text-body-md text-on-surface-variant mt-space-xs">
-                  Detrás de cada estadística hay una cola moviéndose feliz y una familia con el corazón completo.
+                  Conteos del catálogo actual de esta instalación.
                 </p>
               </div>
 
@@ -294,36 +297,36 @@ function HomeContent() {
                   <div className="w-14 h-14 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed mb-space-md">
                     <span className="material-symbols-outlined text-[28px]">pets</span>
                   </div>
-                  <span className="font-display-lg text-display-lg text-primary font-bold">1,420+</span>
-                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Adopciones Felices</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Vidas unidas para siempre en hogares amorosos.</p>
+                  <span className="font-display-lg text-display-lg text-primary font-bold">{metrics?.animals ?? '—'}</span>
+                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Mascotas disponibles</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Compañeros publicados en el catálogo.</p>
                 </div>
 
                 <div className="flex flex-col items-center text-center p-space-lg rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container-high/40">
                   <div className="w-14 h-14 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed mb-space-md">
                     <span className="material-symbols-outlined text-[28px]">verified_user</span>
                   </div>
-                  <span className="font-display-lg text-display-lg text-secondary font-bold">18</span>
-                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Refugios Certificados</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Con estándares éticos y veterinarios rigurosos.</p>
+                  <span className="font-display-lg text-display-lg text-secondary font-bold">{metrics?.shelters ?? '—'}</span>
+                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Refugios participantes</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Organizaciones activas en el directorio.</p>
                 </div>
 
                 <div className="flex flex-col items-center text-center p-space-lg rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container-high/40">
                   <div className="w-14 h-14 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface mb-space-md">
                     <span className="material-symbols-outlined text-[28px]">favorite</span>
                   </div>
-                  <span className="font-display-lg text-display-lg text-primary-container font-bold">99%</span>
-                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Seguimiento Exitoso</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Acompañamiento en adaptación y bienestar.</p>
+                  <span className="font-display-lg text-display-lg text-primary-container font-bold">{metrics?.urgent ?? '—'}</span>
+                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Casos prioritarios</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Mascotas marcadas como urgentes por el refugio.</p>
                 </div>
 
                 <div className="flex flex-col items-center text-center p-space-lg rounded-2xl bg-surface-container-lowest shadow-sm border border-surface-container-high/40">
                   <div className="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container mb-space-md">
                     <span className="material-symbols-outlined text-[28px]">diversity_3</span>
                   </div>
-                  <span className="font-display-lg text-display-lg text-secondary font-bold">350+</span>
-                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Voluntarios Activos</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Donando tiempo, cuidados y mucho cariño diario.</p>
+                  <span className="font-display-lg text-display-lg text-secondary font-bold">{metrics?.cities ?? '—'}</span>
+                  <span className="font-label-md text-label-md text-on-surface mt-space-xs font-bold">Ciudades participantes</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">Ubicaciones registradas en el directorio.</p>
                 </div>
               </div>
             </div>
@@ -377,7 +380,7 @@ function HomeContent() {
                   Bienvenida a casa
                 </h3>
                 <p className="font-body-md text-body-md text-on-surface-variant">
-                  Firma de adopción responsable y entrega con kit de bienvenida, cartilla de vacunación y guía de adaptación post-rescate.
+                  Coordina con el refugio los requisitos, la entrega y las recomendaciones de adaptación y cuidados.
                 </p>
               </div>
             </div>
@@ -395,10 +398,10 @@ function HomeContent() {
                 </p>
                 <div className="flex flex-wrap gap-space-md">
                   {!isLoading && !isAuthenticated && <Link
-                    href="/registro"
+                    href="/refugios"
                     className="px-space-lg py-space-md rounded-xl bg-primary text-on-primary font-label-md text-label-md shadow hover:bg-primary-container transition-all font-semibold"
                   >
-                    Donar insumos o apadrinar
+                    Contactar un refugio
                   </Link>}
                   {!isLoading && !isAuthenticated && <Link
                     href="/registro"
@@ -407,7 +410,7 @@ function HomeContent() {
                     Ser voluntario
                   </Link>}
                   {isAuthenticated && isRegularUser(user) && (
-                    <Link href="/perfil" className="px-space-lg py-space-md rounded-xl bg-primary text-on-primary font-bold">
+                    <Link href="/perfil?tab=voluntariado" className="px-space-lg py-space-md rounded-xl bg-primary text-on-primary font-bold">
                       Mi voluntariado
                     </Link>
                   )}

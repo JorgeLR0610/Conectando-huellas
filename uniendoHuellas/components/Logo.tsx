@@ -24,7 +24,7 @@ export default function Logo({ size = 'default' }: { size?: 'small' | 'default' 
           <circle cx="32" cy="18" r="3.5" fill="#F4A261"/>
           <path d="M18 17C16 15 13 16 13 18C13 21 18 24 18 24C18 24 23 21 23 18C23 16 20 15 18 17Z" fill="#FFFFFF"/>
         </g>
-        <text x="46" y="27" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fontSize="16" fontWeight="700" fill="#2B2D42" letterSpacing="-0.3">
+        <text x="46" y="27" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fontSize="16" fontWeight="700" fill="currentColor" letterSpacing="-0.3">
           Conectando
         </text>
         <text x="46" y="41" fontFamily="'Plus Jakarta Sans', system-ui, sans-serif" fontSize="13" fontWeight="600" fill="#E07A5F" letterSpacing="0.5">
