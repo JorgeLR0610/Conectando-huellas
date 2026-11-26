@@ -1,4 +1,80 @@
-# Verificación de autenticación, permisos y voluntariado
+# Verificación funcional y preparación para revisión
+
+## Iteración: favoritos y coherencia del perfil
+
+- Se eliminó el botón absoluto que tapaba refugio y enlace. `PetCard` incorpora
+  una sola acción de quitar, debajo del contenido y con nombre accesible por mascota.
+  Espera confirmación del servidor, deshabilita dobles envíos y conserva la tarjeta
+  con error visible cuando falla. El perfil no repite consultas de favorito por tarjeta.
+- Secciones en URL (`?tab=favoritos|solicitudes|voluntariado`), conservadas al recargar.
+  Las fichas vuelven al perfil de origen, el envío de adopción enlaza a solicitudes y
+  los accesos de colaboración abren voluntariado. El login admite esos retornos locales.
+- Errores de carga independientes de favoritos, adopciones y voluntariado; nunca
+  muestran un historial vacío ni un formulario de voluntariado incompleto.
+- **32 pruebas E2E correctas**: 8 escenarios × escritorio/móvil × claro/oscuro,
+  contra el frontend de producción en 3001, con todas las llamadas API interceptadas.
+  Comprueban geometría sin solapamiento, enlace no cubierto, ausencia de desbordamiento,
+  eliminación pendiente/exitosa/fallida, reintentos independientes, navegación
+  entre secciones, retorno desde ficha y postulación completa con enlace al historial.
+  Cada prueba comprueba tema efectivo y ausencia de errores JavaScript de página.
+- **39 pruebas de API correctas**, TypeScript y build de producción correctos;
+  lint sin errores (13 avisos de imágenes/fuentes). `npm audit`: 0 vulnerabilidades
+  tras actualizar dependencias transitivas compatibles, sin cambios mayores forzados.
+- Se añadió `httpx2` a las dependencias de desarrollo para que `TestClient` funcione
+  con Starlette reciente; se conserva `httpx` para versiones anteriores.
+- No se modificaron cuentas, estados ni datos reales en esta iteración.
+- También se inició sesión en la cuenta demo existente y se revisó su favorito
+  real, sin eliminarlo. Capturas locales (no versionadas):
+  `/tmp/opencode/huellas-profile-final-light-desktop.png` y
+  `/tmp/opencode/huellas-profile-final-dark-mobile.png`.
+
+Desde `uniendoHuellas/`, con el frontend actualizado ya ejecutándose:
+
+```bash
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+`E2E_BASE_URL` permite otro origen. Configuración en `playwright.config.ts`;
+escenarios en `tests/e2e/profile.spec.ts`. Trazas y capturas de fallos quedan
+ignoradas por Git y Docker.
+
+## Iteración: presentación, postulaciones y tema
+
+- 39 pruebas de API correctas; build y TypeScript correctos. Lint sin errores,
+  con 13 avisos de optimización de imágenes/fuentes.
+- MySQL: simulación de actualización de presentación, aplicación de 107 cambios
+  de campos y repetición con 0 cambios. Se retiraron etiquetas visibles de refugios,
+  usuarios de muestra, historias y postulaciones, y se completaron las 5 direcciones.
+  Las contraseñas de las 8 cuentas existentes coinciden con el respaldo previo.
+- Las nuevas pruebas cubren respuestas obligatorias, rechazo de espacios/teléfonos
+  inválidos, persistencia de campos separados y conservación del historial antiguo.
+  También cubren repetibilidad de la limpieza y preservación de textos editados.
+- Playwright: formulario inicialmente sin vivienda/experiencia/mensaje; errores
+  junto a cada campo, conservación de respuestas tras corregir errores, envío
+  correcto y detalles completos visibles al solicitante y al administrador.
+- Modo oscuro del sistema en primera visita, elección clara explícita conservada
+  tras recargar, navegación entre páginas sin perder tema y sincronización entre
+  pestañas. Interruptor disponible también en administración.
+- Se corrigió un bloqueo preexistente al deshabilitar almacenamiento local:
+  el sitio público y el interruptor siguen funcionando sin errores JavaScript.
+  Iniciar sesión requiere permitir almacenamiento; no se simula una sesión inválida.
+- Búsquedas `Queretaro` y `Merida` encuentran ciudades con tilde. Los filtros
+  sobreviven al enlace de vuelta desde la ficha y a la recarga.
+- En 390×844, inicio, catálogo, refugios, información, login y registro se revisaron
+  tanto en claro como en oscuro: 12 combinaciones sin desbordamiento horizontal.
+  También se comprobaron administración y formulario en oscuro.
+- Se utilizó una cuenta QA nueva y una sesión administrativa temporal; se eliminaron
+  solo esa cuenta y su solicitud. Se conservó una postulación manual anterior que
+  no pertenece a las semillas. No se modificaron contraseñas ni estados de mascotas.
+
+Respaldo de esta iteración: `/tmp/opencode/huellas-before-theme.sql` (privado).
+Capturas: `/tmp/opencode/huellas-dark-home.png`,
+`/tmp/opencode/huellas-dark-shelters.png`,
+`/tmp/opencode/huellas-dark-application-mobile.png`,
+`/tmp/opencode/huellas-dark-catalog-mobile.png`,
+`/tmp/opencode/huellas-dark-admin.png`.
 
 ## Pruebas automatizadas de API
 
@@ -9,7 +85,7 @@ docker compose exec backend pip install -r requirements-dev.txt
 docker compose exec backend python -m unittest discover -s tests -v
 ```
 
-28 pruebas cubren:
+39 pruebas cubren:
 
 - Registro de Usuario sin selección de rol, persistencia de ciudad con tildes y acceso a voluntariado desde la misma cuenta.
 - Rechazo de roles privilegiados y campos adicionales en el registro público.
@@ -32,12 +108,70 @@ docker compose exec backend python -m unittest discover -s tests -v
 - Rechazo de cuerpo multipart sobredimensionado, archivos falsos, SVG, datos inválidos y accesos no autorizados.
 - Limpieza de archivos ante fallo de BD, eliminación de mascotas y conservación de imágenes aún referenciadas.
 - Imagen ilustrativa estable si no se carga foto y rechazo de rutas de archivo arbitrarias.
+- Adopción definitiva, cierre de solicitudes competidoras y prohibición de reabrir o eliminar resoluciones.
+- Cancelación de pendientes, rechazo de duplicados y bloqueo de nuevas solicitudes en animales no disponibles.
+- Notas internas ocultas en ficha de solicitud, historial personal y perfil completo.
+- Salud persistente con valores verdadero, falso y desconocido; estados de adopción inválidos rechazados.
+- Carga demo repetible sin sobrescribir ediciones, contraseñas ni cuentas, con rollback ante colisiones.
+- Readiness con 503 sanitizado ante indisponibilidad de la BD.
 
 La ejecución actual pasa. Las dependencias instaladas emiten advertencias de deprecación de `httpx`/Starlette y de usos heredados de `datetime.utcnow`; no son fallos de la suite.
 
-## Interfaz con MCP Playwright
+## Iteración anterior: interfaz con MCP Playwright
 
-Verificación contra los contenedores de producción en `http://localhost:3000`:
+La revisión de ampliación de datos se realizó contra los contenedores de producción en
+`http://localhost:3001` (3000 pertenece a otro proyecto que se conservó funcionando).
+En 1440×1000 y 390×844 se comprobó:
+
+- Búsqueda sin resultados, limpieza de filtros, ciudades reales y navegación desde el directorio.
+- Inicio de sesión desde una ficha y retorno a esa misma mascota.
+- Alta, eliminación y nueva alta de favoritos. Se corrigió una carrera entre la
+  consulta inicial y la actualización optimista que desincronizaba el corazón.
+- Envío de postulación, edición administrativa de descripción y salud, lectura del
+  mensaje completo y resolución mediante confirmación con respuesta pública.
+- Aprobación de una solicitud y rechazo automático de la competidora; retirada
+  del animal del catálogo y botón deshabilitado al volver a la ficha.
+- Respuesta visible al solicitante sin enviar ni renderizar notas internas.
+- Solicitud de voluntariado, aprobación desde el panel y estado visible al usuario.
+- Redirección del administrador desde el catálogo hacia `/admin`.
+- Diálogo móvil de 358 px, foco atrapado tras recorrerlo con Tab, Escape y
+  restauración del foco al botón que lo abrió.
+- Sin desbordamiento horizontal en inicio, catálogo, directorio, información y perfil.
+- Simulación de 503 del catálogo: mensaje de error separado del estado vacío y
+  recuperación mediante Reintentar. El error HTTP de consola fue el provocado;
+  no se registraron errores JavaScript de página durante estos recorridos.
+- Login real de `demo1@example.com` tras la carga.
+
+Las acciones administrativas se probaron con una sesión temporal firmada localmente
+para el administrador existente; no se cambió su contraseña ni se creó un administrador
+predeterminado. El login normal sí se realizó mediante el formulario.
+
+Capturas locales de esta ejecución (no versionadas):
+`/tmp/opencode/huellas-catalogo-mobile.png`,
+`/tmp/opencode/huellas-admin-mobile.png`,
+`/tmp/opencode/huellas-refugios-desktop.png`.
+
+### MySQL y datos
+
+- Dos aprobaciones simultáneas devolvieron 200 y 409; quedó una aprobada y una
+  rechazada. No solo se comprobó sobre SQLite.
+- Carga en MySQL existente: simulación, aplicación y repetición sin nuevos registros.
+- Arranque limpio verificado en otro proyecto Compose aislado, sin puertos publicados:
+  esquema SQL, migraciones repetidas, readiness, carga y repetición sin duplicados,
+  y ausencia de administrador automático. Ese entorno de prueba se eliminó después.
+- Se eliminaron solo los 2 animales y 2 usuarios temporales del recorrido de navegador,
+  junto con sus solicitudes, voluntariado y favorito.
+- Estado al terminar aquella iteración: 7 refugios, 30 animales (24 disponibles, 4 en proceso y 2 adoptados),
+  8 cuentas, 10 solicitudes de adopción, 6 favoritos y 6 solicitudes de voluntariado.
+  Las 2 cuentas y los 5 animales originales se conservaron.
+  Posteriormente se conservó una solicitud manual adicional: el total actual es 11,
+  sin alterar ni eliminar ese registro para igualar los conteos de la semilla.
+- Respaldo previo a la ampliación: `/tmp/opencode/huellas-backup-before-demo.sql`,
+  con permisos privados; contiene datos sensibles y no se versiona.
+
+## Verificaciones de entregas anteriores
+
+Los siguientes puntos fueron comprobados previamente en `http://localhost:3000`:
 
 - Errores amigables para correo y contraseña; aceptación de 8 caracteres.
 - Registro único, sin selector adoptante/voluntario, con ciudades fuera de las sugerencias.
@@ -63,6 +197,10 @@ Se recreó el contenedor backend sin eliminar su volumen: la foto subida y la ur
 Se utilizan cuentas y mascotas temporales de QA, no cambios de estado sobre las mascotas existentes.
 
 ## Compilación
+
+Resultado de esta entrega: TypeScript sin errores, lint sin errores (13 avisos
+de optimización de imágenes/fuentes) y build de producción correcto. Las
+dependencias Python emiten avisos de deprecación ya indicados, sin fallos.
 
 ```bash
 cd uniendoHuellas

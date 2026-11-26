@@ -1,6 +1,6 @@
 # 🐾 Uniendo Huellas (Conectando Huellas)
 
-> Plataforma web integral para la adopción ética, digna y transparente de animales de compañía rescatados. Conecta a personas interesadas en adoptar con albergues y refugios verificados mediante un catálogo interactivo, seguimiento de solicitudes en tiempo real y herramientas de gestión administrativa.
+> Plataforma educativa para la adopción ética de animales de compañía rescatados. Conecta a personas interesadas en adoptar con refugios mediante un catálogo interactivo, seguimiento de solicitudes desde el perfil y herramientas de gestión administrativa. Los datos de muestra son ficticios; no implican verificación externa de organizaciones.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.4.6-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.3.0-blue?style=flat-square&logo=react)](https://react.dev/)
@@ -69,9 +69,10 @@ flowchart LR
 - [Docker Compose](https://docs.docker.com/compose/) (versión 2 o superior)
 
 ### 1. Levantar todos los servicios
-Desde la carpeta raíz del proyecto (`programacion_web`), ejecuta:
+Desde `programacion_web/Conectando-huellas`, ejecuta:
 
 ```bash
+python3 scripts/configure_local.py
 docker compose up -d --build
 ```
 
@@ -82,7 +83,20 @@ Para comprobar el estado de los contenedores:
 docker compose ps
 ```
 
-Deberás ver los 3 contenedores en estado `Up` y `uniendo_db` marcado como `(healthy)`.
+Deberás ver los 3 contenedores en estado `Up`, con `db` y `backend` en `(healthy)`.
+
+Si 3000 ya está ocupado, usa `python3 scripts/configure_local.py --port 3001`
+antes del primer inicio, o cambia `FRONTEND_PORT` en el `.env` raíz existente.
+El script no sobrescribe secretos ni configuración existentes. La clave JWT se genera
+aleatoriamente; Compose no arranca sin ella. Cambiarla cierra las sesiones previas.
+MySQL y backend están publicados solo en loopback; en Compose se deshabilita el
+fallback a SQLite para evitar trabajar por error sobre otra base.
+
+### Preparación para la revisión
+
+Consulta [REVISION.md](REVISION.md) para ampliar los datos sin borrar volúmenes,
+probar los flujos y conocer el alcance real de la demo. No uses `down -v` en una
+instalación con información que quieras conservar.
 
 ### 2. Acceder a las aplicaciones
 
@@ -140,7 +154,7 @@ No se crean administradores automáticamente al arrancar ni desde el registro p�
 
 2. **Ficha Detallada de Adopción (`/mascotas/[id]`)**:
    - Información completa de la mascota, historia de rescate, edad estimada, cuidados veterinarios y datos de contacto del refugio.
-   - **Postulación Formal**: Formulario de adopción que envía una solicitud directa a la base de datos vinculada a la cuenta del adoptante (`POST /api/solicitudes`).
+   - **Postulación formal**: Vivienda, experiencia, teléfono y mensaje propio obligatorios (`POST /api/solicitudes`). La resolución se consulta en `/perfil?tab=solicitudes`; las notas internas no se publican.
    - **Botón de Favoritos**: Alternador de corazón conectado con la API (`POST/DELETE /api/favoritos`).
 
 3. **Autenticación y Sesión Segura**:
@@ -159,12 +173,16 @@ No se crean administradores automáticamente al arrancar ni desde el registro p�
     - El administrador autenticado navega solo entre `/admin` y `/perfil`; las rutas públicas lo devuelven al panel. El cierre de sesión permite volver al sitio público.
 
 5. **Perfil personal (`/perfil`)**:
-   - Vista centralizada de datos personales y estado de verificación.
-   - Pestaña de **Favoritos Guardados** con eliminación dinámica.
-    - Pestaña de **Mis Solicitudes** para dar seguimiento paso a paso a cada trámite de adopción.
+   - Datos personales y enlaces directos: `?tab=favoritos`, `?tab=solicitudes` y `?tab=voluntariado`. La sección se conserva al recargar y al volver de una ficha.
+   - **Favoritos guardados**: Una sola acción de quitar por tarjeta, sin tapar el refugio ni el enlace. Espera confirmación del servidor y conserva la tarjeta si falla.
+   - **Mis solicitudes**: Historial de resoluciones definitivas; se consulta al abrir el perfil, sin prometer actualización en tiempo real.
+   - Carga, error y lista vacía diferenciados; cada sección permite reintentar sin recargar las otras.
      - Cualquier **Usuario** (`id_rol=3`) puede usar **Mi voluntariado**: solicitud a un refugio activo para paseos, traslados o acogida temporal, disponibilidad y comentarios. El administrador aprueba o rechaza en `/admin` → **Voluntariado**.
      - Adopciones y voluntariado son funciones de la misma cuenta, sin permisos administrativos.
     - El perfil de gestión (administrador o encargado) muestra datos personales y cierre de sesión, sin favoritos, solicitudes personales ni contador de trámites. El encargado no obtiene acceso a `/admin`: conserva únicamente sus operaciones de API sobre su refugio.
+
+El tema claro/oscuro sigue al sistema inicialmente y conserva la elección incluso
+al cerrar sesión. Búsquedas sin depender de tildes y filtros guardados en la URL.
 
 ### Imágenes de mascotas
 
@@ -200,7 +218,14 @@ cd uniendoHuellas
 npm run lint
 npx tsc --noEmit
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
+
+La suite E2E necesita la aplicación actual ejecutándose en `http://localhost:3001`
+(`E2E_BASE_URL` permite otro origen). Intercepta todas las llamadas `/api/*`, sin
+usar credenciales ni modificar MySQL. Ejecuta los recorridos del perfil en escritorio
+y móvil, en claro y oscuro. Consulta [VERIFICACION.md](VERIFICACION.md).
 
 ---
 
@@ -232,7 +257,7 @@ Si prefieres ejecutar los componentes de manera independiente en tu máquina de 
    DB_PASSWORD=root
    DB_NAME=adopciones_db
    USE_SQLITE_FALLBACK=true
-   JWT_SECRET=super_secret_jwt_key_nubira_weather_2026_adopciones
+   JWT_SECRET=<generar-un-secreto-aleatorio-de-al-menos-32-caracteres>
    ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
    ```
    > **Nota:** Si no dispones de un servidor MySQL local, el backend conmuta automáticamente a la base de datos SQLite local (`adopciones.db`) para que puedas desarrollar sin interrupciones.
@@ -271,7 +296,7 @@ Si prefieres ejecutar los componentes de manera independiente en tu máquina de 
 | `DATABASE_URL` | Cadena de conexión SQLAlchemy (PyMySQL) | `mysql+pymysql://root:root@db:3306/adopciones_db?charset=utf8mb4` | Backend |
 | `USE_SQLITE_FALLBACK` | Conmutar a SQLite (`adopciones.db`) si MySQL falla | `true` | Backend |
 | `ALLOWED_ORIGINS` | Orígenes HTTP permitidos en CORS | `http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000` | Backend |
-| `JWT_SECRET` | Clave secreta para firmar tokens JWT | `super_secret_jwt_key_nubira_weather_2026_adopciones` | Backend |
+| `JWT_SECRET` | Clave secreta para firmar tokens JWT | Obligatoria, aleatoria; sin valor predeterminado | Backend |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Duración del token de sesión | `1440` (24 horas) | Backend |
 | `INTERNAL_API_URL` | URL del backend accesible internamente por Next.js rewrites | `http://backend:8000` | Frontend |
 | — | El navegador consume rutas relativas `/api/...`; no requiere `NEXT_PUBLIC_API_URL`. | Mismo origen | Frontend |

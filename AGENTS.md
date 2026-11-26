@@ -73,11 +73,9 @@
     │   ├── mascotas/page.tsx       # Catálogo público con filtros combinados
     │   ├── mascotas/[id]/page.tsx  # Ficha de mascota (con generateStaticParams y Suspense)
     │   ├── refugios/page.tsx       # Directorio de refugios
-    │   ├── adoptar/[id]/page.tsx   # Formulario de solicitud de adopción
-    │   ├── favoritos/page.tsx      # Galería de mascotas favoritas del adoptante
-    │   ├── solicitudes/page.tsx    # Historial de solicitudes del usuario
+    │   ├── informacion/page.tsx    # Alcance educativo y limitaciones
     │   ├── admin/page.tsx          # Panel administrativo / refugio
-    │   └── perfil/page.tsx         # Gestión del perfil de usuario
+    │   └── perfil/page.tsx         # Favoritos/solicitudes/voluntariado con ?tab=
     ├── components/                 # Componentes UI reutilizables (Navbar, Footer, PetCard, etc.)
     ├── context/                    # Estado global de React
     │   └── AuthContext.tsx         # Contexto de autenticación, almacenamiento en localStorage
@@ -189,7 +187,7 @@ Cliente Web                        Next.js (/api)                  FastAPI (/api
 
 ### Tokens y Roles:
 - Duración del token JWT: **1440 minutos (24 horas)**.
-- Algoritmo: **HS256** firmado con `SECRET_KEY` de variables de entorno.
+- Algoritmo: **HS256** firmado con `JWT_SECRET` de variables de entorno (obligatoria, al menos 32 caracteres).
 - Llaves en `localStorage`:
   - `auth_token`: string JWT crudo.
   - `auth_role`: `"Administrador"`, `"Refugio / Encargado"` o `"Usuario"`.
@@ -209,6 +207,13 @@ Solo `require_usuario` (rol 3) permite crear adopciones/favoritos y usar vistas 
 La urgencia es `animales.es_urgente`, nunca una inferencia del texto o de `en_proceso`. Actualizar modelos, esquemas y adaptadores juntos.
 `POST /api/animales/ingreso` es un alta administrativa multipart (`datos` JSON serializado, `foto` opcional). El cliente no debe imponer `Content-Type: application/json` a FormData.
 Las fotos se validan/reencodifican con Pillow, se sirven por `/api/imagenes` y viven en el volumen `animal_images` (`UPLOAD_DIR=/app/uploads`), no en la imagen del contenedor ni en Git. No borrar ese volumen para desplegar cambios.
+`vacunado`, `esterilizado` y `desparasitado` son booleanos nullable: NULL significa sin confirmar.
+Las resoluciones de adopción son definitivas. Bloquear primero el animal con `FOR UPDATE`, después las solicitudes; no invertir el orden. Aprobar cierra las competidoras en la misma transacción. Los endpoints personales nunca envían `notas_internas`; el texto visible es `respuesta_publica`.
+`seed_demo.py` es opcional e idempotente mediante `demo_registros`; nunca ejecutarlo automáticamente al arrancar ni usarlo para restablecer cuentas. Ver `REVISION.md`.
+Las postulaciones nuevas requieren vivienda, experiencia, teléfono de contacto y mensaje propio (30–3000 caracteres). Esos campos son nullable únicamente para conservar historiales anteriores; no generar respuestas por defecto en el cliente.
+`data-theme` en `<html>` cambia todos los tokens semánticos de color. `huellas_theme` persiste claro/oscuro, independiente de la sesión. No introducir superficies o textos con colores hexadecimales fijos que rompan el tema.
+En `/perfil`, `?tab=favoritos|solicitudes|voluntariado` identifica la sección y se conserva en los enlaces de retorno. No colocar botones absolutos sobre el pie de `PetCard`: `favoriteAction="remove"` proporciona una única acción integrada y confirmada por servidor. Los errores de carga de cada sección no equivalen a listas vacías.
+`npm run test:e2e` en el frontend ejecuta pruebas de perfil con Playwright en 4 combinaciones de tamaño/tema. Requiere frontend actual en `E2E_BASE_URL` (por defecto 3001); toda la API está interceptada, sin cambios en MySQL.
 
 ---
 
