@@ -214,10 +214,17 @@ Las postulaciones nuevas requieren vivienda, experiencia, teléfono de contacto 
 `data-theme` en `<html>` cambia todos los tokens semánticos de color. `huellas_theme` persiste claro/oscuro, independiente de la sesión. No introducir superficies o textos con colores hexadecimales fijos que rompan el tema.
 En `/perfil`, `?tab=favoritos|solicitudes|voluntariado` identifica la sección y se conserva en los enlaces de retorno. No colocar botones absolutos sobre el pie de `PetCard`: `favoriteAction="remove"` proporciona una única acción integrada y confirmada por servidor. Los errores de carga de cada sección no equivalen a listas vacías.
 `npm run test:e2e` en el frontend ejecuta pruebas de perfil con Playwright en 4 combinaciones de tamaño/tema. Requiere frontend actual en `E2E_BASE_URL` (por defecto 3001); toda la API está interceptada, sin cambios en MySQL.
+`/admin` incluye **Refugios**: crear/editar/suspender/reactivar sin generar usuarios. `GET /api/refugios/gestion` es exclusivo de Admin e incluye todos los estados y `total_animales`. El selector de Nuevo Ingreso usa solo activos; al editar una mascota de refugio inactivo permite conservar su ubicación actual. La API bloquea altas/traslados hacia inactivos y el borrado de refugios con registros vinculados. El alta pública `/api/auth/register-refugio` fue retirada: no restaurarla ni crear encargados implícitos.
 
 ---
 
-## 5. Cuentas de Prueba Preconfiguradas (Credenciales de Desarrollo)
+## 5. Cuentas de desarrollo
+
+La instalación local se limpió por petición del usuario: conserva solo un adoptante
+y un administrador. Sus accesos aleatorios están en `backups/credenciales-locales.txt`,
+ignorado por Git y con permisos privados. No sobrescribirlos ni volver a cargar
+semillas automáticamente. La tabla siguiente describe únicamente las semillas
+SQL de una instalación nueva, no las cuentas que existen en la base activa.
 
 | Rol | Correo Electrónico | Contraseña | ID Rol | ID Refugio Asociado |
 |---|---|---|---|---|

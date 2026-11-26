@@ -1,5 +1,41 @@
 # Verificación funcional y preparación para revisión
 
+## Iteración: gestión administrativa de refugios
+
+- **Administración → Refugios** permite crear organizaciones sin cuentas nuevas,
+  editar contacto y suspender/reactivar con confirmación. Busca sin tildes, filtra
+  por estado e incluye conteo total de animales, también en refugios inactivos.
+- Alta y edición validan campos obligatorios, espacios, límites, teléfono y estados
+  tanto en cliente como en servidor. Los fallos conservan el formulario y permiten
+  reintentar; la carga de refugios no depende del éxito de las solicitudes de adopción.
+- Refugios activos disponibles en directorio y selector de Nuevo Ingreso. Suspender
+  oculta el refugio/catálogo y bloquea nuevas solicitudes, ingresos y traslados,
+  sin borrar animales ni historiales. Las fichas existentes siguen editables.
+- Se retiró `/api/auth/register-refugio` (404); la creación de organizaciones es
+  exclusiva del administrador. La API devuelve 409 al intentar borrar refugios con
+  animales, usuarios o voluntariados; el panel no ofrece borrado.
+- **46 pruebas de API correctas**, en un contenedor aislado con SQLite en memoria.
+  Se incorporaron permisos, validaciones, alta sin usuarios, conservación de datos,
+  suspensión/reactivación, restricciones de ingreso y cierre del alta pública.
+- **56 pruebas E2E correctas**: 14 escenarios de perfil/refugios en las cuatro
+  combinaciones de escritorio/móvil y claro/oscuro. Incluyen alta, edición,
+  confirmación/cancelación, ingreso asociado, directorio, fallos/reintentos,
+  filtro/búsqueda, acceso denegado a adoptantes y ausencia de errores de página.
+- Recorrido adicional contra MySQL real: login del administrador existente,
+  alta/edición de un refugio QA, ingreso de una mascota QA, suspensión, ocultación,
+  bloqueo de borrado con mascota vinculada y reactivación. Se comprobó igualdad
+  de refugios y animales con la instantánea anterior tras limpiar solo esos datos QA.
+- Estado conservado tras la limpieza de cuentas solicitada anteriormente:
+  **2 usuarios, 7 refugios, 30 animales; 0 solicitudes, favoritos y voluntariados**.
+  No se cambiaron contraseñas ni el archivo privado de credenciales.
+- Build/TypeScript correctos y lint sin errores (13 avisos de imágenes/fuentes).
+
+Capturas locales, no versionadas:
+`/tmp/opencode/huellas-shelter-admin-dark-desktop.png`,
+`/tmp/opencode/huellas-shelter-admin-dark-mobile.png`.
+Las siguientes secciones documentan verificaciones de iteraciones anteriores;
+sus conteos de cuentas y solicitudes no describen la base actual.
+
 ## Iteración: favoritos y coherencia del perfil
 
 - Se eliminó el botón absoluto que tapaba refugio y enlace. `PetCard` incorpora
@@ -85,7 +121,7 @@ docker compose exec backend pip install -r requirements-dev.txt
 docker compose exec backend python -m unittest discover -s tests -v
 ```
 
-39 pruebas cubren:
+46 pruebas cubren:
 
 - Registro de Usuario sin selección de rol, persistencia de ciudad con tildes y acceso a voluntariado desde la misma cuenta.
 - Rechazo de roles privilegiados y campos adicionales en el registro público.
@@ -114,6 +150,9 @@ docker compose exec backend python -m unittest discover -s tests -v
 - Salud persistente con valores verdadero, falso y desconocido; estados de adopción inválidos rechazados.
 - Carga demo repetible sin sobrescribir ediciones, contraseñas ni cuentas, con rollback ante colisiones.
 - Readiness con 503 sanitizado ante indisponibilidad de la BD.
+- Gestión de refugios exclusiva de Admin, validación, preservación al suspender,
+  reactivación, bloqueo de altas/traslados a inactivos y protección del borrado.
+- Retirada del alta pública de refugio/encargado sin crear organizaciones ni cuentas.
 
 La ejecución actual pasa. Las dependencias instaladas emiten advertencias de deprecación de `httpx`/Starlette y de usos heredados de `datetime.utcnow`; no son fallos de la suite.
 
@@ -164,7 +203,7 @@ Capturas locales de esta ejecución (no versionadas):
 - Estado al terminar aquella iteración: 7 refugios, 30 animales (24 disponibles, 4 en proceso y 2 adoptados),
   8 cuentas, 10 solicitudes de adopción, 6 favoritos y 6 solicitudes de voluntariado.
   Las 2 cuentas y los 5 animales originales se conservaron.
-  Posteriormente se conservó una solicitud manual adicional: el total actual es 11,
+  Posteriormente se conservó una solicitud manual adicional: entonces el total fue 11,
   sin alterar ni eliminar ese registro para igualar los conteos de la semilla.
 - Respaldo previo a la ampliación: `/tmp/opencode/huellas-backup-before-demo.sql`,
   con permisos privados; contiene datos sensibles y no se versiona.

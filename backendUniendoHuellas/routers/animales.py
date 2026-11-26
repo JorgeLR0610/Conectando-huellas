@@ -105,6 +105,8 @@ def save_animal(data, db, current_user, foto: Optional[UploadFile] = None):
     refugio = db.query(models.Refugio).filter(models.Refugio.id_refugio == id_refugio).first()
     if not refugio:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El refugio especificado no existe.")
+    if refugio.estado_cuenta != "activo":
+        raise HTTPException(409, "Selecciona un refugio activo para el nuevo ingreso.")
 
     animal_dict = data.model_dump()
     animal_dict["id_refugio"] = id_refugio
@@ -186,8 +188,12 @@ def update_animal(
                 request.respuesta_publica = "La mascota ya no está disponible para adopción. Contacta al refugio para más información."
     if current_user.id_rol != 1:
         update_dict.pop("id_refugio", None)
-    elif "id_refugio" in update_dict and not db.get(models.Refugio, update_dict["id_refugio"]):
-        raise HTTPException(400, "Selecciona un refugio existente.")
+    elif "id_refugio" in update_dict and update_dict["id_refugio"] != animal.id_refugio:
+        target = db.get(models.Refugio, update_dict["id_refugio"])
+        if not target:
+            raise HTTPException(400, "Selecciona un refugio existente.")
+        if target.estado_cuenta != "activo":
+            raise HTTPException(409, "Solo puedes trasladar mascotas a un refugio activo.")
     for key, value in update_dict.items():
         setattr(animal, key, value)
 

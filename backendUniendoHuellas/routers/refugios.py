@@ -1,10 +1,11 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from database import get_db
 import models
 import schemas
-from auth import get_current_user, require_admin, require_refugio_or_admin
+from auth import require_admin, require_refugio_or_admin
 
 router = APIRouter(prefix="/api/refugios", tags=["Refugios (Separados y Relacionales)"])
 
@@ -33,6 +34,21 @@ def get_refugios(
         query = query.filter(models.Refugio.estado_cuenta == estado_cuenta.strip())
 
     return query.order_by(models.Refugio.id_refugio.desc()).all()
+
+
+@router.get("/gestion", response_model=List[schemas.RefugioGestionResponse], summary="Directorio administrativo (todos los estados)")
+def get_refugios_gestion(
+    db: Session = Depends(get_db),
+    _current_user: models.Usuario = Depends(require_admin),
+):
+    rows = db.query(models.Refugio, func.count(models.Animal.id_animal)).outerjoin(
+        models.Animal, models.Animal.id_refugio == models.Refugio.id_refugio,
+    ).group_by(models.Refugio.id_refugio).order_by(models.Refugio.nombre_organizacion).all()
+    return [
+        schemas.RefugioGestionResponse(
+            **schemas.RefugioResponse.model_validate(refugio).model_dump(), total_animales=count,
+        ) for refugio, count in rows
+    ]
 
 
 @router.get("/{id_refugio}", response_model=schemas.RefugioResponse, summary="Obtener un refugio por ID")
@@ -99,11 +115,13 @@ def delete_refugio(
     db: Session = Depends(get_db),
     _current_user: models.Usuario = Depends(require_admin)
 ):
-    """Elimina un refugio del sistema (Requiere Administrador)."""
+    """Solo permite borrar refugios vacíos. Para conservar historiales, suspender."""
     refugio = db.query(models.Refugio).filter(models.Refugio.id_refugio == id_refugio).first()
     if not refugio:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Refugio no encontrado")
 
+    if refugio.animales or refugio.voluntariados or refugio.usuarios:
+        raise HTTPException(409, "Este refugio tiene registros vinculados. Suspéndelo para conservar su historial.")
     db.delete(refugio)
     db.commit()
     return schemas.MensajeRespuesta(mensaje="Refugio eliminado exitosamente", id=id_refugio)

@@ -33,6 +33,12 @@ export interface BackendRefugio {
   estado_cuenta: string;
 }
 
+export interface ManagedShelter extends BackendRefugio {
+  total_animales: number;
+}
+
+export type ShelterData = Pick<BackendRefugio, 'nombre_organizacion' | 'direccion' | 'ciudad' | 'estado' | 'telefono'>;
+
 export interface BackendAnimal {
   id_animal: number;
   id_refugio: number;
@@ -236,26 +242,18 @@ export const api = {
         body: JSON.stringify(data),
       });
     },
-    async registerRefugio(data: {
-      nombre_organizacion: string;
-      direccion: string;
-      ciudad: string;
-      estado: string;
-      telefono_refugio: string;
-      logo_url?: string;
-      nombre_encargado: string;
-      correo: string;
-      password: string;
-      telefono_encargado: string;
-    }): Promise<{ access_token: string; usuario: User; refugio: BackendRefugio; token_type: string; mensaje: string }> {
-      return request('/api/auth/register-refugio', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
     async me(): Promise<User> {
       return request<User>('/api/auth/me');
     },
+  },
+
+  refugios: {
+    all: () => request<ManagedShelter[]>('/api/refugios/gestion'),
+    create: (data: ShelterData) => request<BackendRefugio>('/api/refugios', {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+    update: (id: number, data: Partial<ShelterData> & { estado_cuenta?: 'activo' | 'suspendido' }) =>
+      request<BackendRefugio>(`/api/refugios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
 
   voluntariado: {

@@ -98,7 +98,7 @@ El administrador usa `/admin` y `/perfil`, sin autoservicio de adopción o favor
 
 ### 1. Autenticación y Registro (`/api/auth`)
 - `POST /api/auth/register`: Registro público de usuarios, sin selección de rol. No acepta `id_rol` ni `tipo_cuenta`.
-- `POST /api/auth/register-refugio`: Alta simultánea de la casa de adopción (`Refugios`) y su usuario encargado (`Usuarios`).
+- El alta pública `/api/auth/register-refugio` está retirada (404). Crear refugios usa `POST /api/refugios`, exclusivo de administrador y sin crear cuentas.
 - `POST /api/auth/login`: Inicio de sesión (retorna Token JWT + datos del usuario y rol).
 - `GET /api/auth/me`: Perfil del usuario actualmente autenticado.
 
@@ -111,10 +111,17 @@ El administrador usa `/admin` y `/perfil`, sin autoservicio de adopción o favor
   - `DELETE /api/roles/{id_rol}` (eliminar - Admin)
 - **Refugios**:
   - `GET /api/refugios` (listar con filtros: `ciudad`, `estado`, `estado_cuenta`)
+  - `GET /api/refugios/gestion` (solo Admin: todos los estados y `total_animales`)
   - `GET /api/refugios/{id_refugio}` (por ID)
-  - `POST /api/refugios` (crear)
-  - `PUT /api/refugios/{id_refugio}` (editar)
-  - `DELETE /api/refugios/{id_refugio}` (eliminar)
+  - `POST /api/refugios` (solo Admin; nombre, dirección, ciudad, estado y teléfono obligatorios, sin crear usuarios)
+  - `PUT /api/refugios/{id_refugio}` (editar; solo Admin puede cambiar `estado_cuenta`: `activo`, `pendiente`, `suspendido`)
+  - `DELETE /api/refugios/{id_refugio}` (solo Admin y refugios vacíos; 409 si hay animales, usuarios o voluntariados)
+
+Suspender conserva animales, solicitudes y favoritos; excluye el refugio del
+directorio y sus animales del catálogo, y bloquea nuevas postulaciones, voluntariados,
+ingresos y traslados hacia él. Los animales existentes pueden seguir editándose,
+manteniendo el mismo refugio o trasladándolos a uno activo. Reactivar no modifica
+estados de animales ni resoluciones anteriores.
 - **Animales**:
   - `GET /api/animales` (listar con filtros: `especie`, `raza`, `sexo`, `tamano`, `estado_adopcion`, `id_refugio`, `q`)
   - `GET /api/animales/{id_animal}` (por ID)

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Annotated, List, Literal, Optional
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
 
 def password_bytes(value: str) -> str:
@@ -56,22 +56,46 @@ class RefugioBase(BaseModel):
     logo_url: Optional[str] = Field(None, max_length=500)
     estado_cuenta: str = Field(default="activo", max_length=30)
 
+NombreRefugio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=150)]
+DireccionRefugio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=255)]
+UbicacionRefugio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
+EstadoRefugio = Literal["activo", "pendiente", "suspendido"]
+
+
 class RefugioCreate(RefugioBase):
-    pass
+    model_config = ConfigDict(extra="forbid")
+    nombre_organizacion: NombreRefugio
+    direccion: DireccionRefugio
+    ciudad: UbicacionRefugio
+    estado: UbicacionRefugio
+    telefono: TelefonoContacto
+    estado_cuenta: EstadoRefugio = "activo"
 
 class RefugioUpdate(BaseModel):
-    nombre_organizacion: Optional[str] = Field(None, max_length=150)
-    direccion: Optional[str] = Field(None, max_length=255)
-    ciudad: Optional[str] = Field(None, max_length=100)
-    estado: Optional[str] = Field(None, max_length=100)
-    telefono: Optional[str] = Field(None, max_length=30)
+    model_config = ConfigDict(extra="forbid")
+    nombre_organizacion: Optional[NombreRefugio] = None
+    direccion: Optional[DireccionRefugio] = None
+    ciudad: Optional[UbicacionRefugio] = None
+    estado: Optional[UbicacionRefugio] = None
+    telefono: Optional[TelefonoContacto] = None
     logo_url: Optional[str] = Field(None, max_length=500)
-    estado_cuenta: Optional[str] = Field(None, max_length=30)
+    estado_cuenta: Optional[EstadoRefugio] = None
+
+    @field_validator("nombre_organizacion", "direccion", "ciudad", "estado", "telefono", "estado_cuenta")
+    @classmethod
+    def reject_null(cls, value):
+        if value is None:
+            raise ValueError("Este campo no puede ser nulo.")
+        return value
 
 class RefugioResponse(RefugioBase):
     id_refugio: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RefugioGestionResponse(RefugioResponse):
+    total_animales: int
 
 
 # =====================================================================
@@ -286,21 +310,6 @@ class UsuarioPerfilCompletoResponse(UsuarioConRolRefugioResponse):
     favoritos: List[FavoritoDetalladoResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
-
-# 7.9 Registro simultáneo de Refugio + Usuario Administrador del refugio
-class RegistroRefugioYAdminRequest(BaseModel):
-    # Datos del Refugio
-    nombre_organizacion: str
-    direccion: str
-    ciudad: str
-    estado: str
-    telefono_refugio: str
-    logo_url: Optional[str] = None
-    # Datos del Encargado / Usuario
-    nombre_encargado: str
-    correo: EmailStr
-    password: Password
-    telefono_encargado: str
 
 # 7.10 Dashboard de Métricas y Estadísticas Globales
 class DashboardResumenResponse(BaseModel):

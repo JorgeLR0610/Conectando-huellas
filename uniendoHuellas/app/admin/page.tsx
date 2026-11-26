@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
 import { useAuth } from '@/context/AuthContext';
-import { api, BackendAnimal, BackendRefugio, DashboardStats, errorMessage } from '@/lib/api';
+import { api, BackendAnimal, BackendRefugio, ManagedShelter, DashboardStats, errorMessage } from '@/lib/api';
 import SessionStatus from '@/components/SessionStatus';
 import { AdminVolunteerPanel } from '@/components/VolunteerPanel';
 import ImagePreview from '@/components/ImagePreview';
 import { backendAnimalToPet } from '@/lib/adapters';
 import Dialog from '@/components/Dialog';
 import ThemeToggle from '@/components/ThemeToggle';
+import AdminShelters from '@/components/AdminShelters';
 import { adoptionDetails, normalizeSearch } from '@/lib/presentation';
 
 interface InventoryItem {
@@ -47,7 +48,7 @@ export default function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const allowed = isAuthenticated && user?.id_rol === 1;
 
-  const [activeTab, setActiveTab] = useState<'inventory' | 'requests' | 'volunteers'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'requests' | 'volunteers' | 'shelters'>('inventory');
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -57,6 +58,8 @@ export default function AdminPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [shelterLoadError, setShelterLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [editing, setEditing] = useState<BackendAnimal | null>(null);
@@ -65,7 +68,7 @@ export default function AdminPage() {
   const [decision, setDecision] = useState<{ id: string; status: ApplicationItem['status'] } | null>(null);
   const [publicReply, setPublicReply] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
-  const [shelters, setShelters] = useState<BackendRefugio[]>([]);
+  const [shelters, setShelters] = useState<ManagedShelter[]>([]);
   const [shelterId, setShelterId] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -84,16 +87,19 @@ export default function AdminPage() {
 
   const loadAdminData = async () => {
     if (!allowed) return;
+    // Shelter management remains usable if inventory or applications fail.
+    const shelterRequest = api.refugios.all().then((data) => {
+      setShelters(data);
+      setShelterLoadError('');
+    }).catch((error) => { setShelterLoadError(errorMessage(error)); });
     try {
-      const [statsData, animalsData, appsData, sheltersData] = await Promise.all([
+      const [statsData, animalsData, appsData] = await Promise.all([
         api.dashboard.getResumen(),
         api.animales.getAll({ estado_adopcion: 'todos' }),
         api.solicitudes.getAll(),
-        api.dashboard.getRefugiosDirectorio(),
       ]);
-      setError('');
+      setLoadError('');
       setStats(statsData);
-      setShelters(sheltersData);
       {
         const mappedInventory: InventoryItem[] = animalsData.map((a) => {
           const pet = backendAnimalToPet(a);
@@ -144,8 +150,9 @@ export default function AdminPage() {
         setApplications(mappedApps);
       }
     } catch (error) {
-      setError(errorMessage(error));
+      setLoadError(errorMessage(error));
     } finally {
+      await shelterRequest;
       setIsLoading(false);
     }
   };
@@ -160,6 +167,16 @@ export default function AdminPage() {
     // Fetch only after the backend-validated administrator session is available.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowed]);
+
+  const refreshData = () => { setIsLoading(true); setLoadError(''); void loadAdminData(); };
+  const shelterSaved = (shelter: BackendRefugio) => {
+    setShelters((items) => {
+      const existing = items.find((item) => item.id_refugio === shelter.id_refugio);
+      const updated = { ...shelter, total_animales: existing?.total_animales ?? 0 };
+      return existing ? items.map((item) => item.id_refugio === updated.id_refugio ? updated : item) : [...items, updated];
+    });
+    void loadAdminData();
+  };
 
   const handleAddAnimal = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -317,7 +334,7 @@ export default function AdminPage() {
           <nav className="flex flex-col gap-1">
             <button
               type="button"
-              onClick={() => { setActiveTab('inventory'); setUrgentOnly(false); }}
+              onClick={() => { setActiveTab('inventory'); setUrgentOnly(false); setSearchQuery(''); }}
               className={`flex items-center gap-space-sm px-space-md py-space-sm rounded-xl font-label-md text-label-md transition-all text-left cursor-pointer ${
                 activeTab === 'inventory'
                   ? 'bg-secondary-container text-on-secondary-container font-bold shadow-xs'
@@ -340,7 +357,7 @@ export default function AdminPage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab('requests')}
+              onClick={() => { setActiveTab('requests'); setSearchQuery(''); }}
               className={`flex items-center gap-space-sm px-space-md py-space-sm rounded-xl font-label-md text-label-md transition-all text-left cursor-pointer ${
                 activeTab === 'requests'
                   ? 'bg-secondary-container text-on-secondary-container font-bold shadow-xs'
@@ -358,6 +375,13 @@ export default function AdminPage() {
               className={`flex items-center gap-space-sm px-space-md py-space-sm rounded-xl font-semibold text-left ${activeTab === 'volunteers' ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
               <span className="material-symbols-outlined text-[20px]">volunteer_activism</span>
               Voluntariado
+            </button>
+
+            <button type="button" onClick={() => { setActiveTab('shelters'); setSearchQuery(''); }}
+              aria-pressed={activeTab === 'shelters'}
+              className={`flex items-center gap-space-sm px-space-md py-space-sm rounded-xl font-semibold text-left ${activeTab === 'shelters' ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[20px]">home_work</span>
+              Refugios
             </button>
 
             <Link
@@ -401,9 +425,10 @@ export default function AdminPage() {
             <span className="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
             <input
               type="search"
+              aria-label={activeTab === 'shelters' ? 'Buscar refugios' : 'Buscar mascota o registro'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar mascota o registro..."
+              placeholder={activeTab === 'shelters' ? 'Nombre, ciudad o dirección…' : 'Buscar mascota o registro…'}
               className="bg-transparent border-none outline-none font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant w-full"
             />
           </div>
@@ -412,7 +437,7 @@ export default function AdminPage() {
             <ThemeToggle />
             <button
               type="button"
-              onClick={() => { setIsLoading(true); setError(''); void loadAdminData(); }}
+              onClick={refreshData}
               className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
               title="Actualizar datos desde la API"
             >
@@ -432,6 +457,12 @@ export default function AdminPage() {
         {/* Content Container */}
         <main className="p-space-lg lg:p-space-xl flex-1 flex flex-col gap-space-xl">
           {error && <p role="alert" className="p-3 rounded-lg bg-error-container/40 text-error">{error}</p>}
+          {loadError && activeTab !== 'shelters' && <div role="alert" className="p-3 rounded-lg bg-error-container/40 text-error">
+            {loadError} <button type="button" onClick={refreshData} className="underline font-semibold">Reintentar carga</button>
+          </div>}
+          {shelterLoadError && activeTab !== 'shelters' && <div role="alert" className="p-3 rounded-lg bg-error-container/40 text-error">
+            No pudimos cargar los refugios para asignar mascotas. <button type="button" onClick={refreshData} className="underline font-semibold">Reintentar refugios</button>
+          </div>}
           {success && <p role="status" className="p-3 rounded-lg bg-secondary-container text-on-secondary-container">{success}</p>}
           {isLoading && <p role="status">Actualizando datos…</p>}
           {/* Hero Welcome & Actions */}
@@ -441,29 +472,35 @@ export default function AdminPage() {
                 Gestión de Refugio y Adopciones
               </h1>
               <p className="font-body-md text-body-md text-on-surface-variant">
-                Control centralizado del inventario de rescate, evaluaciones y flujo de adopción en tiempo real.
+                Control centralizado de refugios, animales y solicitudes. Actualiza los datos cuando lo necesites.
               </p>
             </div>
 
             <div className="flex items-center gap-space-sm flex-wrap">
-              <button
+              {activeTab === 'inventory' && <button
                 type="button"
                 onClick={exportReport}
                 className="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-label-md shadow-xs hover:bg-surface-container transition-all border border-surface-container-high cursor-pointer font-semibold"
               >
                 <span className="material-symbols-outlined text-[18px]">file_download</span>
                 <span>Exportar CSV</span>
-              </button>
+              </button>}
               <button
                 type="button"
+                disabled={isLoading || !!shelterLoadError || !shelters.some((item) => item.estado_cuenta === 'activo')}
                 onClick={() => setModalOpen(true)}
-                className="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow-md hover:bg-primary-container transition-all cursor-pointer font-semibold"
+                className="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow-md hover:bg-primary-container hover:text-on-primary-container transition-all cursor-pointer font-semibold disabled:opacity-60"
               >
                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                 <span>Nuevo Ingreso</span>
               </button>
             </div>
           </div>
+
+          {!isLoading && !shelterLoadError && !shelters.some((item) => item.estado_cuenta === 'activo') && <p className="p-3 rounded-lg bg-surface-container text-on-surface">
+            Para registrar animales necesitas un refugio activo. <button type="button" className="underline font-semibold text-primary"
+              onClick={() => { setActiveTab('shelters'); setSearchQuery(''); }}>Añadir o activar un refugio</button>.
+          </p>}
 
           {/* KPI Stat Cards (Real data from API) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
@@ -541,12 +578,14 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="flex items-center gap-space-xs pt-space-xs font-label-sm text-label-sm text-on-surface-variant">
-                <span>Red verificada</span>
+                <span>Organizaciones activas</span>
               </div>
             </div>
           </div>
 
           {activeTab === 'volunteers' && <AdminVolunteerPanel />}
+          {activeTab === 'shelters' && <AdminShelters items={shelters} loading={isLoading}
+            loadError={shelterLoadError} onRetry={refreshData} onSaved={shelterSaved} search={searchQuery} />}
 
           {/* Tab 1: Inventory Table */}
           {activeTab === 'inventory' && (
@@ -746,7 +785,10 @@ export default function AdminPage() {
                 <select id="animal-shelter" required value={shelterId} onChange={(event) => setShelterId(event.target.value)}
                   className="w-full bg-surface-container-low px-3 py-2 rounded-lg text-sm">
                   <option value="">Selecciona un refugio</option>
-                  {shelters.map((shelter) => <option key={shelter.id_refugio} value={shelter.id_refugio}>{shelter.nombre_organizacion}</option>)}
+                  {shelters.filter((shelter) => shelter.estado_cuenta === 'activo' || shelter.id_refugio === editing?.id_refugio).map((shelter) =>
+                    <option key={shelter.id_refugio} value={shelter.id_refugio} disabled={shelter.estado_cuenta !== 'activo'}>
+                      {shelter.nombre_organizacion}{shelter.estado_cuenta !== 'activo' ? ' (inactivo; conserva el refugio actual)' : ''}
+                    </option>)}
                 </select>
               </div>
               <div>

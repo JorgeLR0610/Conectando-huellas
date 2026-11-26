@@ -165,6 +165,8 @@ No se crean administradores automáticamente al arrancar ni desde el registro p�
      - `/login` y `/registro` redirigen al inicio para usuarios normales y a `/admin` para administradores. Google y Apple no están habilitados.
 
 4. **Portal del Refugio y Administración (`/admin`, exclusivo de administradores)**:
+   - **Refugios**: Crear organizaciones, editar nombre/dirección/ubicación/teléfono y suspender o reactivar con confirmación. No crea cuentas de encargado. Incluye búsqueda sin tildes y filtro por estado.
+   - Los refugios activos aparecen en el directorio y en **Nuevo Ingreso**. Suspender oculta sus animales del catálogo y bloquea nuevas adopciones, colaboraciones e ingresos, sin borrar animales ni historiales. Las fichas existentes siguen siendo editables desde administración.
    - **Métricas en Vivo**: Conteo global de animales en refugio, adopciones completadas, solicitudes pendientes y refugios activos.
    - **Inventario de Animales**: Tabla completa con buscador, filtro de estado y modal para **Nuevo Ingreso** con guardado directo en MySQL.
     - **Gestión de Solicitudes**: Revisión de postulaciones recibidas, visualización de datos de vivienda/contacto y acciones para **Aprobar** o **Rechazar**.
@@ -309,12 +311,15 @@ Si prefieres ejecutar los componentes de manera independiente en tu máquina de 
 |---|---|---|---|
 | `GET` | `/` | Estado de la API y motor de base de datos conectado | No |
 | `POST` | `/api/auth/register` | Crea un Usuario; no acepta `tipo_cuenta` ni `id_rol`; `ciudad` libre | No |
-| `POST` | `/api/auth/register-refugio` | Registro simultáneo de un refugio y su usuario encargado | No |
 | `POST` | `/api/auth/login` | Inicio de sesión (retorna token JWT + datos de usuario) | No |
 | `GET` | `/api/auth/me` | Información del usuario en sesión actual | Sí (Bearer) |
 | `GET` | `/api/consultas-juntas/catalogo` | Catálogo público con filtros avanzados de búsqueda | No |
 | `GET` | `/api/consultas-juntas/dashboard` | Métricas y estadísticas consolidadas de la plataforma | Sí (Admin) |
 | `GET` | `/api/consultas-juntas/refugios-directorio` | Directorio de refugios activos y conteo de animales | No |
+| `GET` | `/api/refugios/gestion` | Todos los refugios y conteo total de animales, incluidos inactivos | Sí (Admin) |
+| `POST` | `/api/refugios` | Crear una organización, sin crear usuarios | Sí (Admin) |
+| `PUT` | `/api/refugios/{id}` | Editar contacto; solo Admin cambia `estado_cuenta` | Sí (Admin / encargado del propio refugio) |
+| `DELETE` | `/api/refugios/{id}` | Solo refugios vacíos; con registros vinculados devuelve 409 | Sí (Admin) |
 | `GET` | `/api/animales` | Listado general de animales con paginación y filtros | No |
 | `GET` | `/api/animales/{id}` | Datos básicos de un animal por su identificador | No |
 | `GET` | `/api/animales/{id}/detalle-completo` | Detalle del animal con refugio, estado de favorito y solicitudes | Opcional |
@@ -337,6 +342,10 @@ Si prefieres ejecutar los componentes de manera independiente en tu máquina de 
 | `PATCH` | `/api/voluntariado/{id}/estado` | Resolver una solicitud pendiente (`aprobada`, `rechazada`) | Sí (Admin) |
 
 El mismo Usuario utiliza favoritos, adopciones y voluntariado. Los datos de usuarios, el historial detallado de adopciones y las métricas globales no son públicos. Los errores 422 no devuelven contraseñas ni valores de entrada.
+
+El alta pública antigua `/api/auth/register-refugio` fue retirada (404). Las nuevas
+organizaciones se registran desde **Administración → Refugios → Añadir refugio**,
+sin crear cuentas adicionales. El panel no ofrece borrado de refugios.
 
 Solo el rol Usuario puede crear adopciones/favoritos o consultar sus vistas personales. El personal mantiene las consultas de revisión administrativa. Catálogo e inventario aceptan `es_urgente=true|false`; `PUT /api/animales/{id}` permite cambiarlo a personal autorizado.
 

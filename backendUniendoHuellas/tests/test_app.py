@@ -195,8 +195,125 @@ class AppTests(unittest.TestCase):
         path = f"/api/voluntariado/{response.json()['id_solicitud']}/estado"
         self.assertEqual(self.client.patch(path, headers=self.headers(1), json={"estado": "pendiente"}).status_code, 422)
         self.assertEqual(self.client.patch(path, headers=self.headers(1), json={"estado": "rechazada"}).json()["estado"], "rechazada")
-        self.assertEqual(self.client.delete("/api/refugios/1", headers=self.headers(1)).status_code, 200)
-        self.assertEqual(self.client.get("/api/voluntariado/mis-solicitudes", headers=self.headers(4)).json(), [])
+        self.assertEqual(self.client.delete("/api/refugios/1", headers=self.headers(1)).status_code, 409)
+        self.assertEqual(self.client.put("/api/refugios/1", headers=self.headers(1),
+                                        json={"estado_cuenta": "suspendido"}).status_code, 200)
+        history = self.client.get("/api/voluntariado/mis-solicitudes", headers=self.headers(4)).json()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["estado"], "rechazada")
+
+    def shelter_data(self, **kwargs):
+        return {"nombre_organizacion": "Refugio Ñandú", "direccion": "Calle del Río 18, Centro, CP 76000",
+                "ciudad": "Querétaro", "estado": "Querétaro", "telefono": "+52 (442) 123-4567", **kwargs}
+
+    def test_admin_shelter_create_and_list_without_creating_users(self):
+        self.assertEqual(self.client.get("/api/refugios/gestion").status_code, 401)
+        self.assertEqual(self.client.post("/api/refugios", json=self.shelter_data()).status_code, 401)
+        for user_id in (2, 3):
+            self.assertEqual(self.client.get("/api/refugios/gestion", headers=self.headers(user_id)).status_code, 403)
+            self.assertEqual(self.client.post("/api/refugios", headers=self.headers(user_id),
+                                             json=self.shelter_data()).status_code, 403)
+        result = self.client.post("/api/refugios", headers=self.headers(1), json=self.shelter_data(
+            nombre_organizacion="  Refugio Ñandú  ", ciudad=" Querétaro " ))
+        self.assertEqual(result.status_code, 201, result.text)
+        shelter = result.json()
+        self.assertEqual(shelter["nombre_organizacion"], "Refugio Ñandú")
+        self.assertEqual(shelter["ciudad"], "Querétaro")
+        self.assertEqual(shelter["estado_cuenta"], "activo")
+        managed = self.client.get("/api/refugios/gestion", headers=self.headers(1)).json()
+        self.assertEqual(len(managed), 3)
+        self.assertEqual(next(row for row in managed if row["id_refugio"] == 1)["total_animales"], 1)
+        self.assertEqual(next(row for row in managed if row["id_refugio"] == shelter["id_refugio"])["total_animales"], 0)
+        public = self.client.get("/api/consultas-juntas/refugios-directorio").json()
+        self.assertIn(shelter["id_refugio"], [row["id_refugio"] for row in public])
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.Usuario).count(), 5)
+
+    def test_shelter_write_validation_and_unknown_ids(self):
+        invalid = [{"nombre_organizacion": "  "}, {"direccion": " "}, {"ciudad": " "}, {"estado": ""},
+                   {"telefono": "sin teléfono"}, {"telefono": "123456"}, {"telefono": "1" * 16},
+                   {"estado_cuenta": "inventado"}, {"id_rol": 1}]
+        for data in invalid:
+            result = self.client.post("/api/refugios", headers=self.headers(1), json=self.shelter_data(**data))
+            self.assertEqual(result.status_code, 422, result.text)
+            self.assertTrue(all("input" not in item and "ctx" not in item for item in result.json()["detail"]))
+        for data in invalid + [{key: None} for key in (
+                "nombre_organizacion", "direccion", "ciudad", "estado", "telefono", "estado_cuenta")]:
+            result = self.client.put("/api/refugios/1", headers=self.headers(1), json=data)
+            self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual(self.client.put("/api/refugios/999", headers=self.headers(1),
+                                        json={"ciudad": "Mérida"}).status_code, 404)
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.Refugio).count(), 2)
+            self.assertEqual(db.get(models.Refugio, 1).nombre_organizacion, "Refugio 1")
+
+    def test_shelter_suspension_reactivation_preserves_records(self):
+        volunteer = {"id_refugio": 1, "modalidad": "paseos", "disponibilidad": "Sábados"}
+        self.assertEqual(self.client.post("/api/voluntariado", headers=self.headers(3), json=volunteer).status_code, 201)
+        self.assertEqual(self.client.put("/api/refugios/1", headers=self.headers(1),
+                                        json={"estado_cuenta": "suspendido"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/consultas-juntas/catalogo").json(), [])
+        public = self.client.get("/api/consultas-juntas/refugios-directorio").json()
+        self.assertNotIn(1, [row["id_refugio"] for row in public])
+        managed = self.client.get("/api/refugios/gestion", headers=self.headers(1)).json()
+        self.assertEqual(next(row for row in managed if row["id_refugio"] == 1)["estado_cuenta"], "suspendido")
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4),
+                                         json=self.adoption_data()).status_code, 409)
+        self.assertEqual(self.client.post("/api/voluntariado", headers=self.headers(4), json=volunteer).status_code, 404)
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.Animal).count(), 2)
+            self.assertEqual(db.get(models.Animal, 1).estado_adopcion, "disponible")
+            self.assertEqual(db.query(models.SolicitudAdopcion).count(), 2)
+            self.assertEqual(db.query(models.SolicitudVoluntariado).count(), 1)
+            self.assertEqual(db.query(models.Favorito).count(), 1)
+        self.assertEqual(self.client.put("/api/refugios/1", headers=self.headers(1),
+                                        json={"estado_cuenta": "activo", "ciudad": "Mérida"}).status_code, 200)
+        self.assertEqual(len(self.client.get("/api/consultas-juntas/catalogo").json()), 1)
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4),
+                                         json=self.adoption_data()).status_code, 201)
+        self.assertEqual(self.client.post("/api/voluntariado", headers=self.headers(4), json=volunteer).status_code, 201)
+
+    def test_inactive_shelters_reject_new_animals_but_allow_existing_edits(self):
+        self.client.put("/api/refugios/1", headers=self.headers(1), json={"estado_cuenta": "suspendido"})
+        data = {"id_refugio": 1, "nombre": "Nueva", "especie": "Gato", "raza": "Mestizo",
+                "sexo": "Hembra", "edad_estimada": "2 años", "tamano": "Pequeño"}
+        self.assertEqual(self.client.post("/api/animales", headers=self.headers(1), json=data).status_code, 409)
+        self.assertEqual(self.client.post("/api/animales/ingreso", headers=self.headers(1),
+                                         data={"datos": json.dumps(data)}).status_code, 409)
+        self.assertEqual(self.client.put("/api/animales/2", headers=self.headers(1), json={"id_refugio": 1}).status_code, 409)
+        result = self.client.put("/api/animales/1", headers=self.headers(1),
+                                 json={"id_refugio": 1, "descripcion": "Cuidados actualizados"})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["descripcion"], "Cuidados actualizados")
+        self.assertEqual(self.client.put("/api/animales/1", headers=self.headers(1), json={"id_refugio": 2}).status_code, 200)
+
+    def test_legacy_public_shelter_registration_is_removed(self):
+        data = {**self.shelter_data(), "telefono_refugio": "1234567890", "nombre_encargado": "Persona",
+                "correo": "encargado@example.com", "password": PASSWORD, "telefono_encargado": "1234567890"}
+        for headers in ({}, self.headers(1), self.headers(3)):
+            self.assertEqual(self.client.post("/api/auth/register-refugio", headers=headers, json=data).status_code, 404)
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.Usuario).count(), 5)
+            self.assertEqual(db.query(models.Refugio).count(), 2)
+
+    def test_shelter_delete_guard_and_empty_cleanup(self):
+        self.assertEqual(self.client.delete("/api/refugios/1", headers=self.headers(1)).status_code, 409)
+        created = self.client.post("/api/refugios", headers=self.headers(1), json=self.shelter_data()).json()
+        path = f"/api/refugios/{created['id_refugio']}"
+        self.assertEqual(self.client.delete(path, headers=self.headers(3)).status_code, 403)
+        self.assertEqual(self.client.delete(path, headers=self.headers(1)).status_code, 200)
+        self.assertEqual(self.client.delete(path, headers=self.headers(1)).status_code, 404)
+
+    def test_shelter_staff_cannot_manage_other_shelters_or_change_status(self):
+        self.assertEqual(self.client.put("/api/refugios/2", headers=self.headers(2),
+                                        json={"ciudad": "Mérida"}).status_code, 403)
+        self.assertEqual(self.client.put("/api/refugios/1", headers=self.headers(3),
+                                        json={"ciudad": "Mérida"}).status_code, 403)
+        result = self.client.put("/api/refugios/1", headers=self.headers(2),
+                                 json={"ciudad": "Mérida", "estado_cuenta": "suspendido"})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["ciudad"], "Mérida")
+        self.assertEqual(result.json()["estado_cuenta"], "activo")
 
     def test_catalog_favorites_and_inventory(self):
         self.assertEqual(len(self.client.get("/api/consultas-juntas/catalogo").json()), 1)

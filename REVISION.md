@@ -100,6 +100,25 @@ Los nombres ya no llevan etiquetas visibles, pero el aviso educativo de
 9. En Mi voluntariado, enviar una colaboración y resolverla desde el panel.
 10. Repetir en móvil y comprobar Escape, Tab y cierre de los diálogos.
 
+### Gestión de refugios
+
+En `/admin`, abrir **Refugios → Añadir refugio** y completar nombre, dirección,
+ciudad, estado/provincia y teléfono (7–15 dígitos). Se crea una organización activa,
+sin cuenta adicional; queda disponible en el directorio y **Nuevo Ingreso**.
+**Editar datos** conserva animales e historiales. Buscar por nombre/ubicación
+ignora tildes; el filtro muestra activos, pendientes o suspendidos.
+
+**Suspender** requiere confirmar: oculta el refugio y sus animales del directorio/
+catálogo e impide nuevas solicitudes e ingresos, sin borrar información. El personal
+puede seguir editando las fichas existentes. **Activar** revierte la suspensión,
+no cambia estados ni resoluciones. El panel no ofrece borrado; incluso la API
+rechaza eliminar refugios con registros vinculados. El alta pública antigua está
+retirada y no crea encargados.
+
+En la instalación local, las dos cuentas finales se conservan. Sus accesos están
+en el archivo privado `backups/credenciales-locales.txt` (ignorado por Git).
+No volver a ejecutar semillas si se desea mantener únicamente esas dos cuentas.
+
 El perfil permite enlaces directos: `/perfil?tab=favoritos`,
 `/perfil?tab=solicitudes` y `/perfil?tab=voluntariado`. La ficha vuelve a la sección
 de origen y el éxito de adopción abre el historial. Quitar un favorito usa una
@@ -146,10 +165,12 @@ npm run test:e2e
 
 Las pruebas E2E requieren el frontend actualizado en `http://localhost:3001`;
 para otro puerto: `E2E_BASE_URL=http://localhost:PUERTO npm run test:e2e`.
-Son 8 escenarios en 4 combinaciones de viewport/tema (32 pruebas). Interceptan
+Son 14 escenarios en 4 combinaciones de viewport/tema (56 pruebas). Interceptan
 todas las peticiones API con datos aislados y no escriben en la base activa.
 Comprueban geometría sin superposición, enlaces usables, eliminación confirmada,
-fallos y reintentos independientes, conservación de sección y envío de postulación.
+fallos y reintentos independientes, conservación de sección y envío de postulación;
+también alta/edición/suspensión/reactivación de refugios, selector de ingreso,
+directorio, validación y permisos. Las 46 pruebas de API usan SQLite aislado.
 
 El build de Docker también compila el frontend de producción. El contenedor final
 no contiene todos los archivos fuente necesarios para recompilarlo con `exec`;
