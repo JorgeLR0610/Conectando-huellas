@@ -1,5 +1,6 @@
 import os
 import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Union
 import bcrypt
@@ -11,7 +12,9 @@ from database import get_db
 import models
 
 # Configuración JWT
-JWT_SECRET = os.getenv("JWT_SECRET", "super_secret_jwt_key_nubira_weather_2026_adopciones")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET or len(JWT_SECRET) < 32:
+    raise RuntimeError("Configura JWT_SECRET con al menos 32 caracteres aleatorios.")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
@@ -34,7 +37,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     # Compatibilidad con hash SHA-256 (64 caracteres hexadecimales)
     if len(hashed_password) == 64 and all(c in "0123456789abcdefABCDEF" for c in hashed_password):
         sha256_attempt = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
-        if sha256_attempt.lower() == hashed_password.lower():
+        if hmac.compare_digest(sha256_attempt.lower(), hashed_password.lower()):
             return True
 
     # Verificación estándar Bcrypt

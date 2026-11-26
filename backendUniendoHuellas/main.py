@@ -1,12 +1,15 @@
 import os
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from image_storage import ImageUploadLimitMiddleware
-from database import engine, Base, selected_db_type
+from database import engine, Base, get_db, selected_db_type
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from routers import (
     auth,
     roles,
@@ -100,6 +103,16 @@ def read_root():
         "documentacion_redoc": "/redoc",
         "version": "1.0.0"
     }
+
+
+@app.get("/api/health", tags=["Estado de la API"])
+def health(db: Session = Depends(get_db)):
+    """Readiness: comprueba la conexión real, no solo que Uvicorn esté vivo."""
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return JSONResponse(status_code=503, content={"estado": "no_disponible"})
+    return {"estado": "ok", "motor_bd": selected_db_type}
 
 
 if __name__ == "__main__":

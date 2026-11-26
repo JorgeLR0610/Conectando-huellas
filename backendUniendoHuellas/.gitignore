@@ -2,6 +2,9 @@ venv/
 env/
 env.example/
 .venv/
-.env/
+.env
 .env.example/
 uploads/
+__pycache__/
+*.py[cod]
+*.db
