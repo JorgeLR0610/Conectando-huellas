@@ -65,6 +65,9 @@ class Animal(Base):
     descripcion = Column(Text, nullable=True)
     foto_url = Column(String(500), nullable=True)
     es_urgente = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    vacunado = Column(Boolean, nullable=True)
+    esterilizado = Column(Boolean, nullable=True)
+    desparasitado = Column(Boolean, nullable=True)
     estado_adopcion = Column(String(30), nullable=False, default="disponible") # disponible, en_proceso, adoptado
 
     # Relaciones
@@ -80,8 +83,12 @@ class SolicitudAdopcion(Base):
     id_usuario = Column(Integer, ForeignKey("usuarios.id_usuario"), nullable=False)
     id_animal = Column(Integer, ForeignKey("animales.id_animal"), nullable=False)
     mensaje = Column(Text, nullable=True)
+    tipo_vivienda = Column(String(30), nullable=True)
+    experiencia = Column(String(5), nullable=True)
+    telefono_contacto = Column(String(30), nullable=True)
     estado_solicitud = Column(String(30), nullable=False, default="pendiente") # pendiente, aprobada, rechazada
     notas_internas = Column(Text, nullable=True)
+    respuesta_publica = Column(Text, nullable=True)
     fecha_solicitud = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     # Relaciones
@@ -117,3 +124,11 @@ class SolicitudVoluntariado(Base):
     fecha_solicitud = Column(DateTime, nullable=False, default=datetime.utcnow)
     usuario = relationship("Usuario", back_populates="voluntariados")
     refugio = relationship("Refugio", back_populates="voluntariados")
+
+
+class DemoRegistro(Base):
+    """Identidad estable de las semillas; no se basa en nombres ni IDs fijos."""
+    __tablename__ = "demo_registros"
+    clave = Column(String(100), primary_key=True)
+    tabla = Column(String(50), nullable=False)
+    registro_id = Column(Integer, nullable=False)

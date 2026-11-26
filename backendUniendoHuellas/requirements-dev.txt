@@ -1,2 +1,4 @@
 -r requirements.txt
 httpx>=0.27,<1
+# Starlette reciente utiliza httpx2; se conserva httpx para versiones anteriores.
+httpx2>=2,<3

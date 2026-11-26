@@ -61,7 +61,10 @@ def get_solicitud_by_id(
     if current_user.id_rol != 1 and not is_owner and not is_shelter:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes ver la solicitud de otro usuario.")
 
-    return solicitud
+    response = schemas.SolicitudResponse.model_validate(solicitud)
+    if current_user.id_rol == 3:
+        response.notas_internas = None
+    return response
 
 
 @router.post("", response_model=schemas.SolicitudResponse, status_code=status.HTTP_201_CREATED, summary="Enviar una nueva solicitud de adopción")
@@ -75,19 +78,21 @@ def create_solicitud(
     Toma automáticamente el `id_usuario` del usuario logueado.
     """
     # Verificar que el animal existe y está disponible
-    animal = db.query(models.Animal).filter(models.Animal.id_animal == data.id_animal).first()
+    animal = db.query(models.Animal).filter(models.Animal.id_animal == data.id_animal).with_for_update().first()
     if not animal:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El animal especificado no existe.")
 
-    if animal.estado_adopcion == "adoptado":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Este animal ya ha sido adoptado.")
+    if animal.estado_adopcion != "disponible":
+        raise HTTPException(status_code=409, detail="Esta mascota no está disponible para nuevas solicitudes.")
+    if animal.refugio.estado_cuenta != "activo":
+        raise HTTPException(status_code=409, detail="El refugio no está recibiendo solicitudes.")
 
     # Verificar si el usuario ya tiene una solicitud pendiente para este animal
     solicitud_existente = db.query(models.SolicitudAdopcion).filter(
         models.SolicitudAdopcion.id_usuario == current_user.id_usuario,
         models.SolicitudAdopcion.id_animal == data.id_animal,
-        models.SolicitudAdopcion.estado_solicitud == "pendiente"
-    ).first()
+        models.SolicitudAdopcion.estado_solicitud.in_(("pendiente", "aprobada"))
+    ).with_for_update().first()
     if solicitud_existente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,7 +102,10 @@ def create_solicitud(
     nueva_solicitud = models.SolicitudAdopcion(
         id_usuario=current_user.id_usuario,
         id_animal=data.id_animal,
-        mensaje=data.mensaje.strip() if data.mensaje else None,
+        mensaje=data.mensaje,
+        tipo_vivienda=data.tipo_vivienda,
+        experiencia=data.experiencia,
+        telefono_contacto=data.telefono_contacto,
         estado_solicitud="pendiente",
         notas_internas=None,
         fecha_solicitud=datetime.utcnow()
@@ -125,26 +133,52 @@ def update_solicitud_estado(
     if not solicitud:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada")
 
-    # Si es encargado de refugio, validar que el animal pertenezca a su refugio
-    if current_user.id_rol != 1 and solicitud.animal.id_refugio != current_user.id_refugio:
+    # Todas las escrituras de adopción bloquean primero el animal. Una lectura
+    # bloqueante ve el último commit incluso bajo REPEATABLE READ de MySQL.
+    animal = db.query(models.Animal).filter(
+        models.Animal.id_animal == solicitud.id_animal
+    ).populate_existing().with_for_update().one()
+    solicitud = db.query(models.SolicitudAdopcion).filter(
+        models.SolicitudAdopcion.id_solicitud == id_solicitud
+    ).populate_existing().with_for_update().first()
+    if not solicitud:
+        raise HTTPException(404, "Solicitud no encontrada")
+    if current_user.id_rol != 1 and animal.id_refugio != current_user.id_refugio:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No puedes gestionar solicitudes de mascotas de otro refugio."
         )
 
-    estado_normalizado = data.estado_solicitud.strip().lower()
-    if estado_normalizado not in ("pendiente", "aprobada", "rechazada"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Estado de solicitud inválido.")
-
+    estado_normalizado = data.estado_solicitud
+    if solicitud.estado_solicitud != "pendiente":
+        raise HTTPException(409, "Esta solicitud ya fue resuelta; su historial no se puede reabrir.")
+    if estado_normalizado == "aprobada":
+        approved = db.query(models.SolicitudAdopcion).filter(
+            models.SolicitudAdopcion.id_animal == animal.id_animal,
+            models.SolicitudAdopcion.estado_solicitud == "aprobada",
+        ).with_for_update().first()
+        if animal.estado_adopcion == "adoptado" or approved:
+            raise HTTPException(409, "Esta mascota ya tiene una adopción aprobada.")
     solicitud.estado_solicitud = estado_normalizado
     if data.notas_internas is not None:
         solicitud.notas_internas = data.notas_internas.strip()
+    solicitud.respuesta_publica = (data.respuesta_publica or (
+        "Tu solicitud fue aprobada. Contacta al refugio para coordinar los siguientes pasos."
+        if estado_normalizado == "aprobada" else
+        "Tu solicitud no fue aprobada. Puedes contactar al refugio para más información."
+    )).strip()
 
     # Si se aprueba la adopción, actualizar el estado del animal
     if estado_normalizado == "aprobada":
-        solicitud.animal.estado_adopcion = "adoptado"
-    elif estado_normalizado == "pendiente" and solicitud.animal.estado_adopcion == "adoptado":
-        solicitud.animal.estado_adopcion = "disponible"
+        animal.estado_adopcion = "adoptado"
+        others = db.query(models.SolicitudAdopcion).filter(
+            models.SolicitudAdopcion.id_animal == animal.id_animal,
+            models.SolicitudAdopcion.id_solicitud != solicitud.id_solicitud,
+            models.SolicitudAdopcion.estado_solicitud == "pendiente",
+        ).with_for_update().all()
+        for other in others:
+            other.estado_solicitud = "rechazada"
+            other.respuesta_publica = "Esta mascota encontró un hogar mediante otra solicitud. Gracias por tu interés; puedes conocer otros compañeros."
 
     db.commit()
     db.refresh(solicitud)
@@ -165,6 +199,10 @@ def delete_solicitud(
     if current_user.id_rol != 1 and solicitud.id_usuario != current_user.id_usuario:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes cancelar una solicitud que no te pertenece.")
 
+    db.query(models.Animal).filter(models.Animal.id_animal == solicitud.id_animal).with_for_update().one()
+    db.refresh(solicitud, with_for_update=True)
+    if solicitud.estado_solicitud != "pendiente":
+        raise HTTPException(409, "Solo se pueden cancelar solicitudes pendientes. Se conserva el historial resuelto.")
     db.delete(solicitud)
     db.commit()
     return schemas.MensajeRespuesta(mensaje="Solicitud eliminada o cancelada exitosamente", id=id_solicitud)
@@ -204,8 +242,12 @@ def get_solicitudes_detalladas(
                 id_usuario=s.id_usuario,
                 id_animal=s.id_animal,
                 mensaje=s.mensaje,
+                tipo_vivienda=s.tipo_vivienda,
+                experiencia=s.experiencia,
+                telefono_contacto=s.telefono_contacto,
                 estado_solicitud=s.estado_solicitud,
                 notas_internas=s.notas_internas,
+                respuesta_publica=s.respuesta_publica,
                 fecha_solicitud=s.fecha_solicitud,
                 usuario=schemas.UsuarioResponse.model_validate(s.usuario),
                 animal=schemas.AnimalConRefugioResponse.model_validate(s.animal)
@@ -236,8 +278,12 @@ def get_mis_solicitudes(
                 id_usuario=s.id_usuario,
                 id_animal=s.id_animal,
                 mensaje=s.mensaje,
+                tipo_vivienda=s.tipo_vivienda,
+                experiencia=s.experiencia,
+                telefono_contacto=s.telefono_contacto,
                 estado_solicitud=s.estado_solicitud,
-                notas_internas=s.notas_internas,
+                notas_internas=None,
+                respuesta_publica=s.respuesta_publica,
                 fecha_solicitud=s.fecha_solicitud,
                 usuario=schemas.UsuarioResponse.model_validate(s.usuario),
                 animal=schemas.AnimalConRefugioResponse.model_validate(s.animal)
@@ -277,8 +323,12 @@ def get_solicitudes_por_refugio(
                 id_usuario=s.id_usuario,
                 id_animal=s.id_animal,
                 mensaje=s.mensaje,
+                tipo_vivienda=s.tipo_vivienda,
+                experiencia=s.experiencia,
+                telefono_contacto=s.telefono_contacto,
                 estado_solicitud=s.estado_solicitud,
                 notas_internas=s.notas_internas,
+                respuesta_publica=s.respuesta_publica,
                 fecha_solicitud=s.fecha_solicitud,
                 usuario=schemas.UsuarioResponse.model_validate(s.usuario),
                 animal=schemas.AnimalConRefugioResponse.model_validate(s.animal)

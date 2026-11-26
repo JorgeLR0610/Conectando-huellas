@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS animales (
     descripcion TEXT NULL,
     foto_url VARCHAR(500) NULL,
     es_urgente BOOLEAN NOT NULL DEFAULT FALSE,
+    vacunado BOOLEAN NULL,
+    esterilizado BOOLEAN NULL,
+    desparasitado BOOLEAN NULL,
     estado_adopcion VARCHAR(30) NOT NULL DEFAULT 'disponible',
     CONSTRAINT fk_animales_refugios FOREIGN KEY (id_refugio) REFERENCES refugios(id_refugio) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -64,8 +67,12 @@ CREATE TABLE IF NOT EXISTS solicitudes_adopcion (
     id_usuario INT NOT NULL,
     id_animal INT NOT NULL,
     mensaje TEXT NULL,
+    tipo_vivienda VARCHAR(30) NULL,
+    experiencia VARCHAR(5) NULL,
+    telefono_contacto VARCHAR(30) NULL,
     estado_solicitud VARCHAR(30) NOT NULL DEFAULT 'pendiente',
     notas_internas TEXT NULL,
+    respuesta_publica TEXT NULL,
     fecha_solicitud DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_solicitudes_usuarios FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON UPDATE CASCADE ON DELETE CASCADE,
     CONSTRAINT fk_solicitudes_animales FOREIGN KEY (id_animal) REFERENCES animales(id_animal) ON UPDATE CASCADE ON DELETE CASCADE

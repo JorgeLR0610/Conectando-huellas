@@ -10,6 +10,17 @@ def password_bytes(value: str) -> str:
 
 
 Password = Annotated[str, Field(min_length=8), AfterValidator(password_bytes)]
+def contact_phone(value: str) -> str:
+    digits = sum(char.isdigit() for char in value)
+    if not 7 <= digits <= 15:
+        raise ValueError("Introduce un teléfono de 7 a 15 dígitos.")
+    return value
+
+
+TelefonoContacto = Annotated[str, StringConstraints(
+    strip_whitespace=True, min_length=7, max_length=30, pattern=r"^\+?[0-9 ()-]+$"
+), AfterValidator(contact_phone)]
+TipoVivienda = Literal["casa-patio", "depto-malla", "depto-sin-malla", "parcela"]
 Nombre = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=150)]
 Telefono = Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=30)]
 Ciudad = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=150)]
@@ -123,7 +134,10 @@ class AnimalBase(BaseModel):
     descripcion: Optional[str] = None
     foto_url: Optional[str] = Field(None, max_length=500)
     es_urgente: bool = False
-    estado_adopcion: str = Field(default="disponible", max_length=30, examples=["disponible", "en_proceso", "adoptado"])
+    vacunado: Optional[bool] = None
+    esterilizado: Optional[bool] = None
+    desparasitado: Optional[bool] = None
+    estado_adopcion: Literal["disponible", "en_proceso", "adoptado"] = "disponible"
 
 class AnimalCreate(AnimalBase):
     pass
@@ -139,7 +153,10 @@ class AnimalUpdate(BaseModel):
     descripcion: Optional[str] = None
     foto_url: Optional[str] = Field(None, max_length=500)
     es_urgente: Optional[bool] = None
-    estado_adopcion: Optional[str] = Field(None, max_length=30)
+    vacunado: Optional[bool] = None
+    esterilizado: Optional[bool] = None
+    desparasitado: Optional[bool] = None
+    estado_adopcion: Optional[Literal["disponible", "en_proceso", "adoptado"]] = None
 
 class AnimalResponse(AnimalBase):
     id_animal: int
@@ -158,20 +175,29 @@ class SolicitudBase(BaseModel):
     notas_internas: Optional[str] = None
 
 class SolicitudCreate(BaseModel):
-    id_animal: int
-    mensaje: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+    id_animal: int = Field(gt=0)
+    tipo_vivienda: TipoVivienda
+    experiencia: Literal["si", "no"]
+    telefono_contacto: TelefonoContacto
+    mensaje: Annotated[str, StringConstraints(strip_whitespace=True, min_length=30, max_length=3000)]
 
 class SolicitudUpdateEstado(BaseModel):
-    estado_solicitud: str = Field(..., examples=["pendiente", "aprobada", "rechazada"])
-    notas_internas: Optional[str] = None
+    estado_solicitud: Literal["aprobada", "rechazada"]
+    notas_internas: Optional[str] = Field(None, max_length=3000)
+    respuesta_publica: Optional[str] = Field(None, max_length=3000)
 
 class SolicitudResponse(BaseModel):
     id_solicitud: int
     id_usuario: int
     id_animal: int
     mensaje: Optional[str]
+    tipo_vivienda: Optional[str] = None
+    experiencia: Optional[str] = None
+    telefono_contacto: Optional[str] = None
     estado_solicitud: str
     notas_internas: Optional[str]
+    respuesta_publica: Optional[str] = None
     fecha_solicitud: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -227,8 +253,12 @@ class SolicitudDetalladaResponse(BaseModel):
     id_usuario: int
     id_animal: int
     mensaje: Optional[str]
+    tipo_vivienda: Optional[str] = None
+    experiencia: Optional[str] = None
+    telefono_contacto: Optional[str] = None
     estado_solicitud: str
     notas_internas: Optional[str]
+    respuesta_publica: Optional[str] = None
     fecha_solicitud: datetime
     usuario: UsuarioResponse
     animal: AnimalConRefugioResponse

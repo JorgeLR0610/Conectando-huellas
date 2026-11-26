@@ -198,6 +198,8 @@ def get_perfil_completo(
         ciudad=usuario.ciudad,
         rol=schemas.RolResponse.model_validate(usuario.rol) if usuario.rol else None,
         refugio=schemas.RefugioResponse.model_validate(usuario.refugio) if usuario.refugio else None,
-        solicitudes=[schemas.SolicitudResponse.model_validate(s) for s in usuario.solicitudes],
+        solicitudes=[schemas.SolicitudResponse.model_validate(s).model_copy(
+            update={"notas_internas": None} if current_user.id_rol == 3 else {}
+        ) for s in usuario.solicitudes],
         favoritos=favs_detallados
     )

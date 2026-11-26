@@ -1,6 +1,7 @@
 """Pruebas aisladas: nunca utilizan la base de datos de desarrollo."""
 import os
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["JWT_SECRET"] = "isolated-test-key-not-used-by-real-services"
 
 import hashlib
 from io import BytesIO
@@ -22,6 +23,8 @@ from migrations import migrate
 from provision_admin import create_administrator
 import models
 import schemas
+from seed_demo import seed_demo
+from demo_presentation import refresh_presentation, SHELTER_ADDRESSES
 
 
 PASSWORD = "Pruebas123!"
@@ -78,6 +81,11 @@ class AppTests(unittest.TestCase):
     def registration(self, **kwargs):
         return {"nombre_completo": "Ana Muñoz", "correo": "ana@example.com", "password": PASSWORD,
                 "telefono": "1234567890", "ciudad": "Peñamiller, Querétaro", **kwargs}
+
+    def adoption_data(self, **kwargs):
+        return {"id_animal": 1, "tipo_vivienda": "casa-patio", "experiencia": "si",
+                "telefono_contacto": "1234567890",
+                "mensaje": "Tengo tiempo para los paseos y una vivienda segura para su adaptación.", **kwargs}
 
     def test_register_user_and_city_survive_login(self):
         data = self.registration()
@@ -279,12 +287,12 @@ class AppTests(unittest.TestCase):
     def test_staff_cannot_use_adoption_or_favorite_actions(self):
         for user_id in (1, 2):
             headers = self.headers(user_id)
-            self.assertEqual(self.client.post("/api/solicitudes", headers=headers, json={"id_animal": 1}).status_code, 403)
+            self.assertEqual(self.client.post("/api/solicitudes", headers=headers, json=self.adoption_data()).status_code, 403)
             self.assertEqual(self.client.post("/api/favoritos", headers=headers, json={"id_animal": 1}).status_code, 403)
             for path in ("/api/solicitudes/relacion/mis-solicitudes", "/api/favoritos/relacion/mis-favoritos",
                          "/api/favoritos/verificar/1"):
                 self.assertEqual(self.client.get(path, headers=headers).status_code, 403, path)
-        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4), json={"id_animal": 1}).status_code, 201)
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4), json=self.adoption_data()).status_code, 201)
         self.assertEqual(self.client.post("/api/favoritos", headers=self.headers(4), json={"id_animal": 1}).status_code, 201)
 
     def test_urgency_is_explicit_and_filters_catalog_and_inventory(self):
@@ -411,6 +419,179 @@ class AppTests(unittest.TestCase):
         migrate(engine)
         with engine.connect() as connection:
             self.assertEqual(connection.execute(text("SELECT nombre, es_urgente FROM animales")).one(), ("Pequeña Ñaña", 0))
+        engine.dispose()
+
+    def test_adoption_approval_closes_competitors_and_preserves_history(self):
+        second = self.client.post("/api/solicitudes", headers=self.headers(4), json=self.adoption_data())
+        self.assertEqual(second.status_code, 201, second.text)
+        second_id = second.json()["id_solicitud"]
+        response = self.client.put("/api/solicitudes/1/estado", headers=self.headers(1), json={
+            "estado_solicitud": "aprobada", "notas_internas": "Información privada",
+            "respuesta_publica": "Coordina la visita con el refugio.",
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        mine = self.client.get("/api/solicitudes/relacion/mis-solicitudes", headers=self.headers(4)).json()
+        self.assertEqual(mine[0]["estado_solicitud"], "rechazada")
+        self.assertIn("encontró un hogar", mine[0]["respuesta_publica"])
+        self.assertIsNone(mine[0]["notas_internas"])
+        self.assertEqual(self.client.get("/api/animales/1").json()["estado_adopcion"], "adoptado")
+        for request_id in (1, second_id):
+            self.assertEqual(self.client.put(f"/api/solicitudes/{request_id}/estado", headers=self.headers(1),
+                                            json={"estado_solicitud": "aprobada"}).status_code, 409)
+            self.assertEqual(self.client.delete(f"/api/solicitudes/{request_id}", headers=self.headers(1)).status_code, 409)
+        self.assertEqual(self.client.put("/api/animales/1", headers=self.headers(1),
+                                        json={"estado_adopcion": "disponible"}).status_code, 409)
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(5), json=self.adoption_data()).status_code, 409)
+
+    def test_internal_notes_are_private_on_every_personal_response(self):
+        with self.sessions() as db:
+            request = db.get(models.SolicitudAdopcion, 1)
+            request.notas_internas = "Secreto del equipo"
+            request.respuesta_publica = "Mensaje para la familia"
+            db.commit()
+        for path in ("/api/solicitudes/1", "/api/solicitudes/relacion/mis-solicitudes", "/api/usuarios/3/perfil-completo"):
+            response = self.client.get(path, headers=self.headers(3))
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertNotIn("Secreto del equipo", response.text)
+            self.assertIn("Mensaje para la familia", response.text)
+        self.assertIn("Secreto del equipo", self.client.get("/api/solicitudes/1", headers=self.headers(1)).text)
+
+    def test_adoption_reject_cancel_duplicates_and_availability(self):
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(3), json=self.adoption_data()).status_code, 400)
+        self.assertEqual(self.client.delete("/api/solicitudes/1", headers=self.headers(4)).status_code, 403)
+        self.assertEqual(self.client.delete("/api/solicitudes/1", headers=self.headers(3)).status_code, 200)
+        new = self.client.post("/api/solicitudes", headers=self.headers(3), json=self.adoption_data())
+        self.assertEqual(new.status_code, 201, new.text)
+        path = f"/api/solicitudes/{new.json()['id_solicitud']}/estado"
+        self.assertEqual(self.client.put(path, headers=self.headers(3), json={"estado_solicitud": "aprobada"}).status_code, 403)
+        self.assertEqual(self.client.put(path, headers=self.headers(1), json={"estado_solicitud": "pendiente"}).status_code, 422)
+        self.assertEqual(self.client.put(path, headers=self.headers(1), json={"estado_solicitud": "rechazada"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/animales/1").json()["estado_adopcion"], "disponible")
+        self.client.put("/api/animales/1", headers=self.headers(1), json={"estado_adopcion": "en_proceso"})
+        self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4), json=self.adoption_data()).status_code, 409)
+
+    def test_health_fields_roundtrip_unknown_and_validation(self):
+        detail = "/api/animales/1/detalle-completo"
+        self.assertIsNone(self.client.get(detail).json()["vacunado"])
+        result = self.client.put("/api/animales/1", headers=self.headers(1),
+                                 json={"vacunado": True, "esterilizado": False, "desparasitado": True})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertFalse(self.client.get(detail).json()["esterilizado"])
+        self.assertTrue(self.client.get(detail).json()["vacunado"])
+        self.client.put("/api/animales/1", headers=self.headers(1), json={"vacunado": None})
+        self.assertIsNone(self.client.get(detail).json()["vacunado"])
+        self.assertEqual(self.client.put("/api/animales/1", headers=self.headers(1),
+                                        json={"estado_adopcion": "inventado"}).status_code, 422)
+
+    def test_demo_seed_is_idempotent_and_does_not_overwrite_edits_or_accounts(self):
+        with self.sessions() as db:
+            original = db.get(models.Usuario, 3).password_hash
+            result = seed_demo(db, PASSWORD)
+            db.commit()
+            self.assertEqual(result["animales"], 25)
+            self.assertEqual(result["refugios"], 5)
+            marker = db.get(models.DemoRegistro, "review-v1/animal/0")
+            db.get(models.Animal, marker.registro_id).descripcion = "Edición humana"
+            db.commit()
+            self.assertEqual(seed_demo(db, "OtraClave123!"), {})
+            db.commit()
+            self.assertEqual(db.query(models.Animal).count(), 27)
+            self.assertEqual(db.get(models.Animal, marker.registro_id).descripcion, "Edición humana")
+            self.assertEqual(db.get(models.Usuario, 3).password_hash, original)
+            demo_user = db.query(models.Usuario).filter_by(correo="demo1@example.com").one()
+            self.assertTrue(verify_password(PASSWORD, demo_user.password_hash))
+            self.assertFalse(verify_password("OtraClave123!", demo_user.password_hash))
+            self.assertEqual(db.query(models.Usuario).filter_by(id_rol=1).count(), 1)
+
+    def test_demo_seed_collision_rolls_back_without_promoting_user(self):
+        with self.sessions() as db:
+            db.get(models.Usuario, 3).correo = "demo1@example.com"
+            db.commit()
+            with self.assertRaises(ValueError):
+                seed_demo(db, PASSWORD)
+            db.rollback()
+            self.assertEqual(db.query(models.Refugio).count(), 2)
+            self.assertEqual(db.query(models.DemoRegistro).count(), 0)
+            self.assertEqual(db.get(models.Usuario, 3).id_rol, 3)
+
+    def test_health_endpoint_reports_database_failure(self):
+        self.assertEqual(self.client.get("/api/health").status_code, 200)
+        with patch("sqlalchemy.orm.Session.execute", side_effect=SQLAlchemyError("private connection string")):
+            result = self.client.get("/api/health")
+            self.assertEqual(result.status_code, 503)
+            self.assertNotIn("private", result.text)
+
+    def test_adoption_fields_required_and_whitespace_rejected(self):
+        for field in ("tipo_vivienda", "experiencia", "telefono_contacto", "mensaje"):
+            missing = self.adoption_data()
+            missing.pop(field)
+            self.assertEqual(self.client.post("/api/solicitudes", headers=self.headers(4), json=missing).status_code, 422, field)
+        for extra in ({"mensaje": " " * 50}, {"mensaje": "Muy corto"},
+                      {"tipo_vivienda": ""}, {"tipo_vivienda": "otro"}, {"experiencia": ""},
+                      {"telefono_contacto": "abcdefghi"}, {"telefono_contacto": "12"},
+                      {"telefono_contacto": "1" * 16}):
+            response = self.client.post("/api/solicitudes", headers=self.headers(4), json=self.adoption_data(**extra))
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertTrue(all("input" not in item for item in response.json()["detail"]))
+        with self.sessions() as db:
+            self.assertEqual(db.query(models.SolicitudAdopcion).count(), 2)
+
+    def test_structured_adoption_persists_and_legacy_history_still_reads(self):
+        data = self.adoption_data(experiencia="no", telefono_contacto="+52 (442) 123-4567",
+                                  mensaje="  Quiero aprender a cuidar de mi primera mascota y dedicarle tiempo cada día.  ")
+        response = self.client.post("/api/solicitudes", headers=self.headers(4), json=data)
+        self.assertEqual(response.status_code, 201, response.text)
+        saved = response.json()
+        self.assertEqual(saved["mensaje"], data["mensaje"].strip())
+        self.assertEqual(saved["experiencia"], "no")
+        mine = self.client.get("/api/solicitudes/relacion/mis-solicitudes", headers=self.headers(4)).json()[0]
+        self.assertEqual(mine["telefono_contacto"], data["telefono_contacto"])
+        staff = self.client.get("/api/solicitudes/relacion/detalladas", headers=self.headers(1)).json()[0]
+        self.assertEqual(staff["tipo_vivienda"], data["tipo_vivienda"])
+        old = self.client.get("/api/solicitudes/1", headers=self.headers(3)).json()
+        self.assertIsNone(old["tipo_vivienda"])
+        self.assertEqual(old["mensaje"], "Hola")
+
+    def test_presentation_refresh_preserves_human_edits_and_is_repeatable(self):
+        with self.sessions() as db:
+            seed_demo(db, PASSWORD)
+            db.commit()
+            def record(key, model):
+                return db.get(model, db.get(models.DemoRegistro, key).registro_id)
+            shelter = record("review-v1/refugio/0", models.Refugio)
+            shelter.nombre_organizacion = "[Demo] Patitas del Sol"
+            shelter.direccion = "Calle de demostración 10, sin atención presencial"
+            manual = record("review-v1/refugio/1", models.Refugio)
+            manual.direccion = "Dirección editada por una persona"
+            request = record("review-v1/adopcion/0", models.SolicitudAdopcion)
+            request.mensaje = "[Demo] Tengo un hogar seguro y tiempo para adaptación. Me gustaría conocer los cuidados y coordinar una entrevista."
+            edited = record("review-v1/adopcion/1", models.SolicitudAdopcion)
+            edited.mensaje = "Mensaje personal que no debe modificarse."
+            before_hash = db.get(models.Usuario, 3).password_hash
+            db.commit()
+            self.assertGreater(refresh_presentation(db), 0)
+            db.commit()
+            self.assertEqual(refresh_presentation(db), 0)
+            self.assertEqual(shelter.nombre_organizacion, "Patitas del Sol")
+            self.assertEqual(shelter.direccion, SHELTER_ADDRESSES[0])
+            self.assertEqual(manual.direccion, "Dirección editada por una persona")
+            self.assertNotIn("[Demo]", request.mensaje)
+            self.assertEqual(edited.mensaje, "Mensaje personal que no debe modificarse.")
+            self.assertEqual(db.get(models.Usuario, 3).password_hash, before_hash)
+            self.assertEqual(db.query(models.SolicitudAdopcion).count(), 12)
+
+    def test_adoption_migration_preserves_legacy_texts(self):
+        engine = create_engine("sqlite://")
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY, id_rol INTEGER, ciudad VARCHAR(150))"))
+            connection.execute(text("CREATE TABLE roles (id_rol INTEGER PRIMARY KEY, nombre_rol VARCHAR(50))"))
+            connection.execute(text("CREATE TABLE solicitudes_adopcion (id_solicitud INTEGER PRIMARY KEY, mensaje TEXT)"))
+            connection.execute(text("INSERT INTO solicitudes_adopcion VALUES (1, 'Mensaje original con ñ y tildes')"))
+        migrate(engine)
+        migrate(engine)
+        with engine.connect() as connection:
+            row = connection.execute(text("SELECT mensaje, tipo_vivienda, experiencia, telefono_contacto FROM solicitudes_adopcion")).one()
+            self.assertEqual(tuple(row), ("Mensaje original con ñ y tildes", None, None, None))
         engine.dispose()
 
 

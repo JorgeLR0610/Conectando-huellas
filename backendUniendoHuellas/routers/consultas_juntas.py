@@ -70,7 +70,7 @@ def get_directorio_refugios(
     Directorio de casas de adopción activas, mostrando su dirección, contacto
     y la lista de todos sus animales disponibles.
     """
-    query = db.query(models.Refugio).filter(models.Refugio.estado_cuenta == "activo")
+    query = db.query(models.Refugio).options(joinedload(models.Refugio.animales)).filter(models.Refugio.estado_cuenta == "activo")
     if ciudad:
         query = query.filter(models.Refugio.ciudad.ilike(f"%{ciudad.strip()}%"))
 
@@ -123,8 +123,12 @@ def get_solicitudes_completas(
                 id_usuario=s.id_usuario,
                 id_animal=s.id_animal,
                 mensaje=s.mensaje,
+                tipo_vivienda=s.tipo_vivienda,
+                experiencia=s.experiencia,
+                telefono_contacto=s.telefono_contacto,
                 estado_solicitud=s.estado_solicitud,
                 notas_internas=s.notas_internas,
+                respuesta_publica=s.respuesta_publica,
                 fecha_solicitud=s.fecha_solicitud,
                 usuario=schemas.UsuarioResponse.model_validate(s.usuario),
                 animal=schemas.AnimalConRefugioResponse.model_validate(s.animal)

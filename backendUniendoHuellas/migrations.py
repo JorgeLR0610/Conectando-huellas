@@ -13,6 +13,16 @@ def migrate(engine):
             animal_columns = {column["name"] for column in inspector.get_columns("animales")}
             if "es_urgente" not in animal_columns:
                 connection.execute(text("ALTER TABLE animales ADD COLUMN es_urgente BOOLEAN NOT NULL DEFAULT 0"))
+            for field in ("vacunado", "esterilizado", "desparasitado"):
+                if field not in animal_columns:
+                    connection.execute(text(f"ALTER TABLE animales ADD COLUMN {field} BOOLEAN NULL"))
+        if inspector.has_table("solicitudes_adopcion"):
+            fields = {column["name"] for column in inspector.get_columns("solicitudes_adopcion")}
+            if "respuesta_publica" not in fields:
+                connection.execute(text("ALTER TABLE solicitudes_adopcion ADD COLUMN respuesta_publica TEXT NULL"))
+            for field, length in (("tipo_vivienda", 30), ("experiencia", 5), ("telefono_contacto", 30)):
+                if field not in fields:
+                    connection.execute(text(f"ALTER TABLE solicitudes_adopcion ADD COLUMN {field} VARCHAR({length}) NULL"))
 
         roles = models.Rol.__table__
         users = models.Usuario.__table__

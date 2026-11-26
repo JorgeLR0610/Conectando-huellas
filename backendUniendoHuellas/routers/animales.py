@@ -153,7 +153,7 @@ def update_animal(
     Actualiza los datos de una mascota (nombre, foto, estado, etc.).
     Solo permitido para el refugio que lo resguarda o el Administrador.
     """
-    animal = db.query(models.Animal).filter(models.Animal.id_animal == id_animal).first()
+    animal = db.query(models.Animal).filter(models.Animal.id_animal == id_animal).with_for_update().first()
     if not animal:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Animal no encontrado")
 
@@ -166,6 +166,24 @@ def update_animal(
 
     old_photo = animal.foto_url
     update_dict = data.model_dump(exclude_unset=True, exclude_none=True)
+    for field in ("vacunado", "esterilizado", "desparasitado"):
+        if field in data.model_fields_set:
+            update_dict[field] = getattr(data, field)
+    if "estado_adopcion" in update_dict and update_dict["estado_adopcion"] != animal.estado_adopcion:
+        approved = db.query(models.SolicitudAdopcion).filter(
+            models.SolicitudAdopcion.id_animal == id_animal,
+            models.SolicitudAdopcion.estado_solicitud == "aprobada",
+        ).with_for_update().first()
+        if approved:
+            raise HTTPException(409, "La mascota tiene una adopción aprobada; conserva su estado e historial.")
+        if update_dict["estado_adopcion"] == "adoptado":
+            pending = db.query(models.SolicitudAdopcion).filter(
+                models.SolicitudAdopcion.id_animal == id_animal,
+                models.SolicitudAdopcion.estado_solicitud == "pendiente",
+            ).with_for_update().all()
+            for request in pending:
+                request.estado_solicitud = "rechazada"
+                request.respuesta_publica = "La mascota ya no está disponible para adopción. Contacta al refugio para más información."
     if current_user.id_rol != 1:
         update_dict.pop("id_refugio", None)
     elif "id_refugio" in update_dict and not db.get(models.Refugio, update_dict["id_refugio"]):
@@ -280,6 +298,9 @@ def get_animal_detalle_completo(
         descripcion=animal.descripcion,
         foto_url=animal.foto_url,
         es_urgente=animal.es_urgente,
+        vacunado=animal.vacunado,
+        esterilizado=animal.esterilizado,
+        desparasitado=animal.desparasitado,
         estado_adopcion=animal.estado_adopcion,
         refugio=schemas.RefugioResponse.model_validate(animal.refugio) if animal.refugio else None,
         es_favorito=es_favorito,
