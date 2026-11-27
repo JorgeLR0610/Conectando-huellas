@@ -112,34 +112,46 @@ INSERT IGNORE INTO roles (id_rol, nombre_rol) VALUES
 (2, 'Refugio / Encargado'),
 (3, 'Usuario');
 
--- Refugios
+-- Refugios (8 organizaciones activas)
 INSERT IGNORE INTO refugios (id_refugio, nombre_organizacion, direccion, ciudad, estado, telefono, logo_url, estado_cuenta) VALUES
 (1, 'Huellitas con Amor', 'Av. Siempre Viva 742, Col. Primavera', 'Monterrey', 'Nuevo León', '8181234567', 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=400', 'activo'),
-(2, 'Refugio Esperanza Animal', 'Calle Los Olivos 120, Col. Centro', 'Guadalajara', 'Jalisco', '3339876543', 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=400', 'activo');
+(2, 'Refugio Esperanza Animal', 'Calle Los Olivos 120, Col. Centro', 'Guadalajara', 'Jalisco', '3339876543', 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=400', 'activo'),
+(3, 'Patitas del Sol', 'Calle Jacarandas 184, Col. Jardines del Sur', 'Ciudad de México', 'Ciudad de México', '5541234567', 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400', 'activo'),
+(4, 'Segunda Oportunidad', 'Av. Los Encinos 52, Col. Valle del Sol', 'Puebla', 'Puebla', '2223456789', 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=400', 'activo'),
+(5, 'Hogar Ñandú', 'Calle Loma Serena 87, Col. Mirador del Bosque', 'Querétaro', 'Querétaro', '4422345678', 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400', 'activo'),
+(6, 'Amigos del Mayab', 'Calle Almendros 216, Col. Jardines del Mayab', 'Mérida', 'Yucatán', '9993456789', 'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=400', 'activo'),
+(7, 'Bosque de Huellas', 'Av. Las Mariposas 39, Col. Valle de la Luna', 'Toluca', 'Estado de México', '7224567890', 'https://images.unsplash.com/photo-1534361960057-19889db9621e?w=400', 'activo'),
+(8, 'Santuario San Roque', 'Blvd. Paseo de los Insurgentes 310, Col. Jardines del Moral', 'León', 'Guanajuato', '4775678901', 'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=400', 'activo');
 
--- Usuarios de demostración (Contraseñas: refugio123, adoptante123).
--- El administrador se crea SOLO con provision_admin.py; no hay credencial predeterminada.
--- Hashes SHA-256 compatibles con el backend
-INSERT IGNORE INTO usuarios (id_usuario, id_rol, id_refugio, nombre_completo, correo, password_hash, telefono) VALUES
-(2, 2, 1, 'María Fernández', 'maria@huellitasconamor.org', 'cde8c765ccc2c4df9ff7ddfaabd3eb75dec43244912be09b378a59c8e9de1d4a', '8189998877'),
-(3, 3, NULL, 'Jesús Pichardo', 'jesus@ejemplo.com', 'c8775dee4a4e7db87c6a9fb1d30067ef0835f0b717d86d7f4fefb91ff6960f40', '8123456789'),
-(4, 3, NULL, 'Sofía Gómez', 'sofia@ejemplo.com', 'c8775dee4a4e7db87c6a9fb1d30067ef0835f0b717d86d7f4fefb91ff6960f40', '3312345678');
+-- Cuentas locales iniciales (Administrador y Adoptante) con hashes bcrypt
+INSERT IGNORE INTO usuarios (id_usuario, id_rol, id_refugio, nombre_completo, correo, password_hash, telefono, ciudad) VALUES
+(1, 1, NULL, 'Administrador Local', 'admin@example.com', '$2b$12$ymKJ6OySuS049.8qH4baU.SOk7VgAnQOLf9KwoACXyvfKsx9WJyri', '5500000001', 'Ciudad de México'),
+(2, 3, NULL, 'Adoptante Local', 'adoptante@example.com', '$2b$12$7oMVT1feXmbvxm8QDrwqSO7TtuDYkgC5Fk1c31LvwFQlY1LOi5Zy.', '5500000002', 'Ciudad de México');
 
--- Animales
-INSERT IGNORE INTO animales (id_animal, id_refugio, nombre, especie, raza, sexo, edad_estimada, tamano, descripcion, foto_url, estado_adopcion) VALUES
-(1, 1, 'Max', 'Perro', 'Golden Retriever Mestizo', 'Macho', '2 años', 'Grande', 'Muy cariñoso, juguetón y convive excelente con niños y otros perros.', 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=600', 'disponible'),
-(2, 1, 'Luna', 'Gato', 'Siamés Mestizo', 'Hembra', '1 año', 'Pequeño', 'Tranquila, ronroneadora y adora dormir cerca de la ventana.', 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600', 'disponible'),
-(3, 2, 'Rocky', 'Perro', 'Husky Siberiano', 'Macho', '3 años', 'Grande', 'Energético, requiere espacio para correr y paseos diarios.', 'https://images.unsplash.com/photo-1507146426996-ef05306b995a?w=600', 'disponible'),
-(4, 2, 'Milo', 'Gato', 'Europeo común', 'Macho', '6 meses', 'Pequeño', 'Cachorro juguetón, desparasitado y con todas sus vacunas al corriente.', 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600', 'en_proceso'),
-(5, 1, 'Firulais', 'Perro', 'Mestizo cariñoso', 'Macho', '2 años', 'Mediano', 'Juguetón, alegre y muy leal. Le encanta pasear en parques.', 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=600', 'disponible');
-
--- Solicitudes de Adopción
-INSERT IGNORE INTO solicitudes_adopcion (id_solicitud, id_usuario, id_animal, mensaje, estado_solicitud, notas_internas, fecha_solicitud) VALUES
-(1, 3, 1, 'Hola, tengo una casa con patio grande y busco un perrito cariñoso para mi familia.', 'pendiente', 'Casa con jardín inspeccionada telefónicamente.', NOW()),
-(2, 4, 2, 'Vivo sola en departamento y me encantaría darle un hogar tranquilo a Luna.', 'aprobada', 'Adoptante verificada, entrega agendada.', NOW());
-
--- Favoritos
-INSERT IGNORE INTO favoritos (id_favorito, id_usuario, id_animal) VALUES
-(1, 3, 1),
-(2, 3, 3),
-(3, 4, 2);
+-- Animales (25 ejemplares distribuidos entre los 8 refugios)
+INSERT IGNORE INTO animales (id_animal, id_refugio, nombre, especie, raza, sexo, edad_estimada, tamano, descripcion, foto_url, es_urgente, vacunado, esterilizado, desparasitado, estado_adopcion) VALUES
+(1, 1, 'Max', 'Perro', 'Golden Retriever Mestizo', 'Macho', '2 años', 'Grande', 'Muy cariñoso, juguetón y convive excelente con niños y otros perros.', 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(2, 1, 'Luna', 'Gato', 'Siamés Mestizo', 'Hembra', '1 año', 'Pequeño', 'Tranquila, ronroneadora y adora dormir cerca de la ventana.', 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(3, 2, 'Rocky', 'Perro', 'Husky Siberiano', 'Macho', '3 años', 'Grande', 'Energético, requiere espacio para correr y paseos diarios.', 'https://images.unsplash.com/photo-1507146426996-ef05306b995a?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(4, 2, 'Milo', 'Gato', 'Europeo común', 'Macho', '6 meses', 'Pequeño', 'Cachorro juguetón, desparasitado y con todas sus vacunas al corriente.', 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600', FALSE, TRUE, NULL, TRUE, 'en_proceso'),
+(5, 1, 'Firulais', 'Perro', 'Mestizo cariñoso', 'Macho', '2 años', 'Mediano', 'Juguetón, alegre y muy leal. Le encanta pasear en parques.', 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(6, 3, 'Nala', 'Perro', 'Mestizo', 'Hembra', '1 año', 'Mediano', 'Nala disfruta los paseos tranquilos con correa y convive bien con otros perros equilibrados.', 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=600', TRUE, TRUE, TRUE, TRUE, 'disponible'),
+(7, 3, 'Bruno', 'Perro', 'Border Collie Mestizo', 'Macho', '8 meses', 'Mediano', 'Bruno aprende órdenes básicas con rapidez y necesita actividad física moderada cada día.', 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600', FALSE, TRUE, NULL, TRUE, 'disponible'),
+(8, 3, 'Mía', 'Gato', 'Calicó doméstico', 'Hembra', '2 años', 'Pequeño', 'Mía es serena, limpia y disfruta descansar junto a una ventana protegida con malla.', 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(9, 4, 'Toby', 'Perro', 'Schnauzer Mestizo', 'Macho', '4 años', 'Pequeño', 'Toby se adapta fácil a departamentos y agradece rutinas estables y paseos cortos.', 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(10, 4, 'Kiara', 'Gato', 'Atigrado naranja', 'Hembra', '5 meses', 'Pequeño', 'Kiara es curiosa, juguetona y busca un hogar paciente para completar su esquema de cuidados.', 'https://images.unsplash.com/photo-1526336024174-e58f5cdd8e13?w=600', TRUE, NULL, FALSE, TRUE, 'disponible'),
+(11, 4, 'Simón', 'Perro', 'Labrador Mestizo', 'Macho', '6 años', 'Grande', 'Simón es noble, obediente y prefiere hogares tranquilos donde lo acompañen por las tardes.', 'https://images.unsplash.com/photo-1534361960057-19889db9621e?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(12, 5, 'Coco', 'Gato', 'Doméstico pelo corto', 'Macho', '3 años', 'Pequeño', 'Coco disfruta los rascadores altos, los juegos con varita y la compañía sin sobresaltos.', 'https://images.unsplash.com/photo-1495360010541-f48722b34f7d?w=600', FALSE, TRUE, TRUE, NULL, 'disponible'),
+(13, 5, 'Olivia', 'Perro', 'Pastor Mestizo', 'Hembra', '9 años', 'Mediano', 'Olivia es una perrita senior dulce y calmada que necesita un rincón cómodo para descansar.', 'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=600', TRUE, TRUE, TRUE, TRUE, 'disponible'),
+(14, 5, 'Bimba', 'Gato', 'Tuxedo doméstico', 'Hembra', '1 año', 'Pequeño', 'Bimba es observadora y cariñosa cuando toma confianza; ideal para ambientes interiores seguros.', 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600', FALSE, TRUE, NULL, TRUE, 'disponible'),
+(15, 6, 'Ñoño', 'Perro', 'Bóxer Mestizo', 'Macho', '5 años', 'Grande', 'Ñoño es afectuoso, protector con su familia y disfruta las caminatas al amanecer.', 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(16, 6, 'Frida', 'Gato', 'Carey doméstico', 'Hembra', '4 años', 'Pequeño', 'Frida prefiere hogares sin ruido excesivo y le encanta tomar el sol por las mañanas.', 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(17, 6, 'Leo', 'Perro', 'Cocker Mestizo', 'Macho', '4 meses', 'Pequeño', 'Leo es un cachorro sociable que está aprendiendo a pasear con pechera y socializar.', 'https://images.unsplash.com/photo-1507146426996-ef05306b995a?w=600', FALSE, NULL, FALSE, TRUE, 'disponible'),
+(18, 7, 'Kira', 'Perro', 'Mestizo de montaña', 'Hembra', '3 años', 'Grande', 'Kira necesita patio cercado o caminatas largas y responde muy bien al refuerzo positivo.', 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=600', TRUE, TRUE, TRUE, TRUE, 'disponible'),
+(19, 7, 'Duna', 'Gato', 'Doméstico gris', 'Hembra', '7 años', 'Pequeño', 'Duna es tranquila, independiente y muy agradecida con quienes respetan su espacio.', 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(20, 7, 'Benito', 'Perro', 'Beagle Mestizo', 'Macho', '2 años', 'Mediano', 'Benito es curioso, olfateador incansable y excelente compañero para familias activas.', 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=600', FALSE, TRUE, NULL, TRUE, 'disponible'),
+(21, 8, 'Ámbar', 'Gato', 'Siamés doméstico', 'Hembra', '8 meses', 'Pequeño', 'Ámbar es juguetona y vocal; busca una familia que disfrute interactuar con ella a diario.', 'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=600', FALSE, TRUE, FALSE, TRUE, 'disponible'),
+(22, 8, 'Pancho', 'Perro', 'Mestizo criollo', 'Macho', '8 años', 'Mediano', 'Pancho es un compañero sereno con excelentes modales en casa y paseos pausados.', 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(23, 8, 'Gala', 'Gato', 'Blanco y negro', 'Hembra', '2 años', 'Pequeño', 'Gala convive bien con otros gatos tranquilos y adora las siestas en lugares cálidos.', 'https://images.unsplash.com/photo-1526336024174-e58f5cdd8e13?w=600', FALSE, TRUE, TRUE, TRUE, 'disponible'),
+(24, 2, 'Trufa', 'Perro', 'Poodle Mestizo', 'Hembra', '1 año', 'Pequeño', 'Trufa es dócil, alegre y actualmente se encuentra en etapa de entrevistas con una familia.', 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=600', FALSE, TRUE, TRUE, TRUE, 'en_proceso'),
+(25, 1, 'Mora', 'Gato', 'Doméstico negro', 'Hembra', '3 años', 'Pequeño', 'Mora completó su proceso de adopción responsable y ya disfruta de su nuevo hogar.', 'https://images.unsplash.com/photo-1495360010541-f48722b34f7d?w=600', FALSE, TRUE, TRUE, TRUE, 'adoptado');
